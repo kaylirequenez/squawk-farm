@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# venv
+.venv/
+venv/
+env/
+
+# runtime data (keep folders, ignore contents)
+data/recordings/*
+!data/recordings/.gitkeep
+data/animals/*
+!data/animals/.gitkeep
+data/loops/*
+!data/loops/.gitkeep
+data/projects/*
+!data/projects/.gitkeep
+
+# env files
+.env
+.env.local
+
+# editors
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
