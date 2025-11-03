@@ -1,6 +1,8 @@
 # squawk-farm
 
 # Directory Structure
+
+```
 squawk-farm/
 ├── main.py                      # Kivy entrypoint
 │
@@ -46,3 +48,4 @@ squawk-farm/
     ├── recordings/              # recorded .wav files from the mic
     ├── animals/                 # generated animal configs per user sound
     └── loops/                   # saved loop settings per animal
+ ```
