@@ -1,13 +1,14 @@
 """Loop-related data structures."""
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Tuple
 
 
 @dataclass
 class GlobalLoopSettings:
     bpm: int = 100  # tempo
-    total_beats: int = 8  # length of the full loop (everyone must divide this)
+    measures: int = 2  # measures in the global loop
+    time_sig: Tuple[int, int] = (4, 4)  # time signature (numerator, denominator)
 
 
 @dataclass
