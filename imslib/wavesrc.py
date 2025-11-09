@@ -87,8 +87,31 @@ class WaveBuffer(object):
 
         # get a local copy of the audio data from WaveFile
         wr = WaveFile(filepath)
+        self.clean_data = wr.get_frames(start_frame, num_frames)    
         self.data = wr.get_frames(start_frame, num_frames)
         self.num_channels = wr.get_num_channels()
+
+    def mute_frames(self, start_frame, end_frame):
+        """
+        Mutes a range of frames in the buffer by setting them to zero.
+
+        :param start_frame: The starting frame (in frames) to mute.
+        :param end_frame: The ending frame (in frames) to mute.
+        """
+        start_sample = start_frame * self.num_channels
+        end_sample = end_frame * self.num_channels
+        self.data[start_sample:end_sample] = 0
+
+    def unmute_frames(self, start_frame, end_frame):
+        """
+        Unmutes a range of frames in the buffer by restoring them to their original values.
+
+        :param start_frame: The starting frame (in frames) to unmute.
+        :param end_frame: The ending frame (in frames) to unmute.
+        """
+        start_sample = start_frame * self.num_channels
+        end_sample = end_frame * self.num_channels
+        self.data[start_sample:end_sample] = self.clean_data[start_sample:end_sample]
 
     # start and end args are in units of frames,
     # so take into account num_channels when accessing sample data
@@ -105,12 +128,12 @@ class WaveBuffer(object):
         start_sample = start_frame * self.num_channels
         end_sample = (start_frame + num_frames) * self.num_channels
         return self.data[start_sample:end_sample]
-
-    def get_num_channels(self):
+    
+    def get_num_frames(self):
         """
-        :returns: The number of channels of the loaded wave file.
+        :returns: The number of frames in the wave buffer.
         """
-        return self.num_channels
+        return len(self.data) // self.num_channels
 
 
 # simple class to hold a region: name, start frame, length (in frames)

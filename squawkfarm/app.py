@@ -8,14 +8,14 @@ from squawkfarm.models.loop import GlobalLoopSettings
 from squawkfarm.screens.garden_screen import GardenScreen
 from squawkfarm.screens.loop_editor_screen import LoopEditorScreen
 from squawkfarm.screens.record_screen import RecordScreen
+from squawkfarm.services.loop_engine import LoopEngine
 
 
 # Insert information to be globally accessible to screens here.
 class Globals:
     def __init__(self):
-        self.global_loop = GlobalLoopSettings()
-        self.animals = []
-        self.animal_loops = []
+        self.loop_engine = LoopEngine(GlobalLoopSettings())
+        self.animals = {}
 
 
 def build_app():
