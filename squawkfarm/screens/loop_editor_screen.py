@@ -11,6 +11,7 @@ from imslib.screen import Screen
 from imslib.audio import Audio
 from imslib.wavesrc import WaveBuffer
 from imslib.wavegen import WaveGenerator
+from squawkfarm.services.loop_engine import Loop
 from kivy.core.window import Window
 from kivy.graphics import Rectangle, Color, Line
 from kivy.uix.image import Image
@@ -375,28 +376,78 @@ class LoopEditorScreen(Screen):
             return
 
         try:
-            # Create an in-memory WaveBuffer pointing at the portion of the wave file
-            wb = WaveBuffer(latest, left_sample, num_frames)
-            gen = WaveGenerator(wb, loop=False)
-            gen.set_gain(1.0)
+            # Use the global LoopEngine to play this sample once via play_loop.
+            engine = None
+            # prefer instance-level globals if present
+            if hasattr(self, 'globals') and getattr(self, 'globals'):
+                engine = getattr(self, 'globals').loop_engine
+            # fallback to class-level Screen.globals
+            if engine is None:
+                engine = type(self).globals.loop_engine
 
-            # Stop any existing playback generator
-            self.audio.set_generator(None)
+            if engine is None:
+                raise Exception("LoopEngine not available in globals")
 
-            # Set our generator on the audio object and schedule on_update ticks
-            self.audio.set_generator(gen)
+            # create a unique temporary loop id for preview
+            import time
+            temp_id = f"__preview__{int(time.time() * 1000)}"
 
-            # schedule audio.on_update() to be called frequently until generator finishes
-            if self._play_event:
+            # create Loop entry for this slice
+            try:
+                engine.loops[temp_id] = Loop(latest, left_sample, num_frames, 1.0, 1.0)
+            except Exception as e:
+                print(f"Error creating temporary Loop entry: {e}")
+                raise
+
+            print(f"LoopEditor: starting preview via LoopEngine.play_loop id={temp_id} frames={num_frames} start={left_sample}")
+
+            # Play it once using the engine
+            try:
+                engine.play_loop(temp_id)
+            except Exception as e:
+                print(f"Error during engine.play_loop: {e}")
+                # cleanup temp entry on error
                 try:
-                    self._play_event.cancel()
+                    del engine.loops[temp_id]
                 except Exception:
                     pass
-            # schedule at ~60Hz to match the typical audio/update loop
-            self._play_event = Clock.schedule_interval(self._audio_playback_tick, 1.0 / 60.0)
+                raise
+
+            # Start pumping the engine audio (if not already) while preview plays
+            try:
+                # store the scheduled event so we can cancel it later
+                if hasattr(self, '_engine_preview_event') and self._engine_preview_event:
+                    try:
+                        self._engine_preview_event.cancel()
+                    except Exception:
+                        pass
+                self._engine_preview_event = Clock.schedule_interval(lambda dt: engine.on_update(), 1.0 / 60.0)
+            except Exception as e:
+                print(f"Error scheduling engine.on_update pump: {e}")
+
+            # schedule cleanup of the temporary loop entry after a safe delay (duration + 1s)
+            try:
+                duration_sec = float(num_frames) / float(self.sample_rate) if self.sample_rate else 2.0
+                def _cleanup(dt):
+                    try:
+                        if temp_id in engine.loops:
+                            del engine.loops[temp_id]
+                            print(f"LoopEditor: cleaned up preview id={temp_id}")
+                    except Exception as e:
+                        print(f"Error cleaning temporary preview: {e}")
+                    # stop pumping engine audio
+                    try:
+                        if hasattr(self, '_engine_preview_event') and self._engine_preview_event:
+                            self._engine_preview_event.cancel()
+                            self._engine_preview_event = None
+                    except Exception:
+                        pass
+                Clock.schedule_once(_cleanup, duration_sec + 1.0)
+            except Exception as e:
+                print(f"Error scheduling preview cleanup: {e}")
 
         except Exception as e:
-            print(f"Error starting engine playback: {e}")
+            print(f"Error starting engine playback via LoopEngine.play_loop: {e}")
 
     def _audio_playback_tick(self, dt):
         """Clock callback that pumps the Audio object until the generator finishes."""
