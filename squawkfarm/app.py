@@ -3,6 +3,7 @@
 Defines a minimal Kivy App subclass and attaches a ScreenManager.
 """
 
+from imslib.audio import Audio
 from imslib.screen import ScreenManager
 from squawkfarm.models.loop import GlobalLoopSettings
 from squawkfarm.screens.garden_screen import GardenScreen

@@ -6,9 +6,9 @@ from imslib.audio import Audio
 from imslib.mixer import Mixer
 from imslib.wavegen import WaveGenerator
 from imslib.wavesrc import WaveBuffer, WaveFile
-from squawkfarm.models.loop import AnimalLoop, AnimalLoopSection, GlobalLoopSettings, LoopSection
+from squawkfarm.models.loop import AnimalLoop, AnimalLoopSection, GlobalLoopSettings
 
-from imslib.clock import AudioScheduler, SimpleTempoMap, kTicksPerQuarter, Clock, Scheduler
+from imslib.clock import AudioScheduler, SimpleTempoMap, kTicksPerQuarter
 
 
 MAX_MEASURES = 4

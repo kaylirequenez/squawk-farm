@@ -39,9 +39,8 @@ squawk-farm/
 ├── assets/                      # things that ship WITH the app 
 │   ├── README.md                
 │   ├── animals/                 # premade/gen-AI animal bases 
-│   │   └── README.md            
-│   └── audio_presets/           # built-in sounds 
-│       └── README.md            
+│   ├── audio_presets/           # built-in sounds 
+│   └── ui_images/               # <--- Add this new folder for PNGs           
 │
 └── data/                        # runtime user-generated stuff
     ├── projects/                # saved garden compositions
