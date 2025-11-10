@@ -92,7 +92,8 @@ class Loop(object):
     def __init__(self, audio_path: str, start_frame: Optional[int], num_frames: Optional[int], volume: Optional[float], pitch_shift: Optional[float], sections: List[AnimalLoopSection] = []):
         super(Loop, self).__init__()
         self.audio_path = audio_path
-        self.last_frame = WaveFile(self.audio_path).end # total frames in the original file
+        self.wf = WaveFile(self.audio_path)
+        self.last_frame = self.wf.end # total frames in the original file
 
         # default “recording region” chosen by user
         self.default_start_frame = start_frame if start_frame is not None else 0
@@ -123,6 +124,12 @@ class Loop(object):
         return {start_slot: frame_to_slot(section.get_num_frames()) + start_slot for start_slot, section in self.sections.items()}
 
     # ------------- default loop section -------------
+    def get_default_section(self) -> WaveGenerator:
+        """Get WaveGenerator for this section starting at frame 0."""
+        buf = WaveBuffer(self.audio_path, self.default_start_frame, self.default_num_frames)
+        gen = WaveGenerator(buf)
+        return gen
+    
     def set_left_margin(self, start_frame: int) -> None:
         """Update the default frame range of the recording."""
         shift = start_frame - self.default_start_frame
@@ -538,6 +545,16 @@ class LoopEngine(object):
         """Stops audio playback immediately."""
         self.scheduler.commands.clear()
         self.mixer.generators.clear()
+    
+    def play_loop(self, animal_id: str) -> None:
+        """Play only the specified animal's default loop region once.
+        """
+        loop = self.loops.get(animal_id)
+
+        gen = loop.get_default_section()
+        gen.set_gain(loop.volume)
+        # TODO: apply pitch shift if/when implemented in WaveGenerator or a wrapper
+        self.mixer.add(gen)
             
     # ======================================================================
     # internal helpers
