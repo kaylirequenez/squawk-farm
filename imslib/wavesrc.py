@@ -129,6 +129,12 @@ class WaveBuffer(object):
         end_sample = (start_frame + num_frames) * self.num_channels
         return self.data[start_sample:end_sample]
     
+    def get_num_channels(self):
+        """
+        :returns: The number of channels of the wave buffer.
+        """
+        return self.num_channels
+    
     def get_num_frames(self):
         """
         :returns: The number of frames in the wave buffer.

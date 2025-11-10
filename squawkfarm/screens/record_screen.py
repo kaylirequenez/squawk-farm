@@ -26,7 +26,6 @@ class RecordScreen(Screen):
         self.is_recording = False
         self.audio_writer = None
         self.record_audio = None  # separate Audio object for recording
-        
         # Waveform visualization settings
         self.viz_scale = Window.height * 0.2  # Scale factor for visualization
         self.waveform_points = deque(maxlen=Audio.sample_rate)  # about 1 second
@@ -44,6 +43,11 @@ class RecordScreen(Screen):
         )
         self.record_btn.bind(on_press=self._on_record_btn)
         self.add_widget(self.record_btn)
+        
+    def _get_ui_asset_path(self, filename):
+        # Path calculation assumes the script is in squawkfarm/screens/
+        base_dir = os.path.dirname(__file__)
+        return os.path.join(base_dir, "../../assets/ui_images", filename)
         
     # ------------------------------------------------------------------
     # lifecycle
@@ -90,17 +94,37 @@ class RecordScreen(Screen):
     # ------------------------------------------------------------------
     # drawing
     # ------------------------------------------------------------------
+    def on_barn_press(self, instance=None):
+        # Button on_press passes the instance; accept it optionally
+        self.switch_to('garden')
+    
     def _draw_board_and_line(self):
         """
         Draw a full-screen wood board and an empty waveform line.
         """
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        wood_path = os.path.join(base_dir, "assets", "ui_images", "woodB2.png")
-        wood_tex = Image(source=wood_path).texture
+        woodB_path = self._get_ui_asset_path("woodB2.png")
+        wood_tex = Image(source=woodB_path).texture 
+        barn_path = self._get_ui_asset_path("redbarn2.png")
+        barn = Image(source=barn_path).texture 
+        b_size = Window.width/8
+        
 
         with self.canvas.before:
             Color(1, 1, 1, 1)
             self.wood_rect = Rectangle(pos=(0, 0), size=Window.size, texture=wood_tex)
+            
+        self.barn_button = Button(
+            size_hint=(None, None),
+            size=(b_size, b_size),
+            pos=(Window.width - b_size, 0),
+            background_normal='',  # Remove default button background
+            background_color=(1, 1, 1, 0)  # White color to show texture properly
+        )
+        # Bind the button press event
+        self.barn_button.bind(on_press=self.on_barn_press)
+        # Add the button to the widget tree so it receives touch events
+        self.add_widget(self.barn_button)
 
         # waveform can go above board but still under widgets if you want;
         # we can also put it in canvas.after to make sure it's visible.
@@ -110,6 +134,12 @@ class RecordScreen(Screen):
                 points=[0, Window.height / 2, Window.width, Window.height / 2],
                 width=1.5,
             )
+            Color(1, 1, 1, 1)  # Reset color for barn
+            self.barn_rect = Rectangle(
+                    pos=self.barn_button.pos,
+                    size=self.barn_button.size,
+                    texture=barn
+                )
 
     # ------------------------------------------------------------------
     # UI handlers
@@ -161,7 +191,7 @@ class RecordScreen(Screen):
 
         # go back to garden
         if self.manager:
-            self.manager.current = "garden"
+            self.switch_to('loop')
 
     # ------------------------------------------------------------------
     # audio → waveform

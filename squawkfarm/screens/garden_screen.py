@@ -29,7 +29,6 @@ class GardenScreen(Screen):
         Window.clearcolor = (0.5,0.2,1,1)
         #self.sun = Image(source = self.sun_path).texture  # sun png for BPM
         self.sun = Image(source = self.sun_path, keep_data=True).texture
-        print(f"Texture size: {self.sun.size}, colorfmt: {self.sun.colorfmt}, mipmap: {self.sun.mipmap}")
         self.sun_const = 9
         self.s_size = Window.height/self.sun_const
         self.barn = Image(source = self.barn_path).texture #barn png for button
@@ -80,8 +79,12 @@ class GardenScreen(Screen):
         self.sun_rect.size = (self.s_size,self.s_size)
         self.sun_rect.pos = (0, Window.height - self.s_size)
         self.b_size = Window.width/6
-        self.barn_rect.size = (self.b_size, self.b_size)
-        self.barn_rect.pos = (Window.width - self.b_size,0)
+        new_size = (self.b_size, self.b_size) 
+        new_pos = (Window.width - self.b_size,0) 
+        self.barn_button.size = new_size
+        self.barn_rect.size = new_size
+        self.barn_button.pos = new_pos 
+        self.barn_rect.pos = new_pos
     
     def on_barn_press(self, instance):
         self.switch_to('record')
