@@ -1,4 +1,3 @@
-# squawkfarm/creature_render_simple.py
 import os, math, random, numpy as np, librosa
 from PIL import Image, ImageDraw
 
@@ -13,10 +12,7 @@ def feature_summaries(y, sr):
     centroid = float(librosa.feature.spectral_centroid(y=y, sr=sr).mean())
     rms      = float(librosa.feature.rms(y=y).mean())
     zcr      = float(librosa.feature.zero_crossing_rate(y=y).mean())
-    f0 = librosa.yin(
-        y, fmin=librosa.note_to_hz("C2"), fmax=librosa.note_to_hz("C7"),
-        sr=sr, frame_length=2048, hop_length=512
-    )
+    f0 = librosa.yin(y, fmin=librosa.note_to_hz("C2"), fmax=librosa.note_to_hz("C7"), sr=sr, frame_length=2048, hop_length=512)
     energy = librosa.feature.rms(y=y, frame_length=2048, hop_length=512)[0]
     voiced = energy > (energy.max() * 0.1)
     pitch  = float(np.median(f0[voiced])) if np.any(voiced) else 0.0
@@ -57,9 +53,8 @@ def superformula_points(cx, cy, rx, ry, m=0.0, n1=2.0, n2=2.0, n3=2.0, steps=360
     pts = []
     for i in range(steps):
         phi = 2*math.pi * i/steps
-        a=b=1.0
-        t1 = abs(math.cos(m*phi/4)/a) ** n2
-        t2 = abs(math.sin(m*phi/4)/b) ** n3
+        t1 = abs(math.cos(m*phi/4)) ** n2
+        t2 = abs(math.sin(m*phi/4)) ** n3
         r = (t1 + t2) ** (-1.0/n1) if (t1+t2)!=0 else 0
         x = cx + rx * r * math.cos(phi)
         y = cy - ry * r * math.sin(phi)
@@ -95,9 +90,7 @@ def draw_gradient_pattern(img, cx, cy, rx, ry, color_from, color_to):
         g = int(color_from[1]*t + color_to[1]*(1-t))
         b = int(color_from[2]*t + color_to[2]*(1-t))
         a = int(90*(1-t)+12)
-        gd.ellipse([(grad.size[0]-i)/2, (grad.size[1]-i)/2,
-                    (grad.size[0]+i)/2, (grad.size[0]+i)/2],
-                   fill=(r,g,b,a))
+        gd.ellipse([(grad.size[0]-i)/2, (grad.size[1]-i)/2, (grad.size[0]+i)/2, (grad.size[1]+i)/2], fill=(r,g,b,a))
     layer.paste(grad, (int(cx-rx), int(cy-ry)))
     img.paste(layer, (0,0), mask)
 
@@ -136,7 +129,7 @@ def draw_ears_flush_on_top(drw, cx, cy, rx, ry, oblong, ear_type, color):
             y_top = body_top_y_at_x(cx, cy, rx, ry, oblong, x_ear)
             y_bottom = y_top + overlap
             drw.ellipse([x_ear - w/2, y_bottom - h, x_ear + w/2, y_bottom], fill=color)
-    else:  
+    else:
         base_w = rx*0.26; h = ry*0.58
         for sx in (-1, +1):
             x_ear = cx + sx*ex - back_shift
@@ -163,8 +156,7 @@ def draw_eye(drw, cx, cy, rx, ry, pal, eye_shape='circle', eye_scale=1.0):
     drw.ellipse([ex - 0.25*r, ey - 0.15*r, ex + 0.5*r, ey + 0.25*r], fill=(255,255,255,160))
 
 def draw_mouth(drw, cx, cy, rx, ry, open_deg):
-    pts = mouth_sector_points(cx, cy, rx, ry, half_deg=open_deg,
-                              center_deg=0.0, steps=72, rscale=1.16, ang_pad=6.0)
+    pts = mouth_sector_points(cx, cy, rx, ry, half_deg=open_deg, center_deg=0.0, steps=72, rscale=1.16, ang_pad=6.0)
     drw.polygon(pts, fill=(0,0,0,255))
 
 def fit_body_to_canvas(cx, cy, rx, ry, oblong, margin=18):
@@ -181,16 +173,13 @@ def fit_body_to_canvas(cx, cy, rx, ry, oblong, margin=18):
 
 def params_from_audio(y, sr, seed=None):
     rnd = random.Random(seed)
-
     f0 = feature_summaries(y, sr)['pitch'] if len(y) else 220.0
     if not (f0 and f0 > 0): f0 = 220.0
     f0 = float(np.clip(f0, 60, 1200))
     t_pitch = (math.log2(f0) - math.log2(60)) / (math.log2(1200) - math.log2(60))
     t_pitch = max(0.0, min(1.0, t_pitch))
-
     rx = 45 + (170 - 45) * (1.0 - t_pitch)
     ry = 40 + (160 - 40) * (1.0 - t_pitch)
-
     pal      = rnd.choice(PALETTES)
     oblong   = rnd.uniform(0.6, 1.6)
     body_mode  = rnd.choice(['superellipse', 'superformula'])
@@ -199,65 +188,65 @@ def params_from_audio(y, sr, seed=None):
     pattern    = rnd.choice(['none', 'gradient', 'stripes'])
     eye_shape  = rnd.choice(['circle','h_oval','v_oval','diamond','tri'])
     eye_scale  = rnd.uniform(0.6, 1.8)
+    return dict(palette=pal, rx=rx, ry=ry, oblong=oblong, body_mode=body_mode, body_param=body_param, ear_type=ear_type, pattern=pattern, eye_shape=eye_shape, eye_scale=eye_scale)
 
-    return dict(
-        palette=pal, rx=rx, ry=ry, oblong=oblong,
-        body_mode=body_mode, body_param=body_param,
-        ear_type=ear_type, pattern=pattern,
-        eye_shape=eye_shape, eye_scale=eye_scale
-    )
+def fill_body_opaque(img, cx, cy, rx, ry, color):
+    mask = body_mask(img.size, cx, cy, rx, ry)
+    solid = Image.new("RGBA", img.size, color)
+    img.paste(solid, (0, 0), mask)
+
+def _ear_up_extent(rx, ry, oblong, ear_type):
+    if ear_type == 'round':
+        return rx * 0.20
+    elif ear_type == 'long':
+        return ry * 0.55
+    else:
+        return ry * 0.58
 
 def render_creature_image(wav_path, out_dir, size=(W_FRAME, H_FRAME), seed=None):
-
     os.makedirs(out_dir, exist_ok=True)
     closed_path = os.path.join(out_dir, "closed.png")
     open_path   = os.path.join(out_dir, "open.png")
-
-    print("OPEN PATH")
-    print(open_path)
-
     y, sr, _env = analyze_env(wav_path, sr=16000)
     params = params_from_audio(y, sr, seed=seed)
-
+    W, H = int(size[0]), int(size[1])
+    pal = params['palette']
+    rx, ry, oblong = params['rx'], params['ry'], params['oblong']
+    ear_up = _ear_up_extent(rx, ry, oblong, params['ear_type'])
+    body_span = (rx + ry*oblong) / 2.0
+    leg_len = max(32, int(body_span * 0.52))
+    overlap_in = max(10, 0.22*ry*oblong)
+    leg_down = leg_len - overlap_in
+    half_w_needed = rx * 1.16
+    above = ry*oblong + ear_up
+    below = ry*oblong + leg_down
+    margin = 20
+    sx = (W/2 - margin) / max(half_w_needed, 1e-6)
+    sy = (H/2 - margin) / max(above, below, 1e-6)
+    s = min(1.0, sx, sy)
+    rx *= s; ry *= s; ear_up *= s; leg_len = int(leg_len * s); overlap_in *= s; leg_down *= s
+    cx = W * 0.5
+    cy = H * 0.5 + (leg_down - ear_up) / 2.0
     for path, mouth_deg in ((closed_path, 8), (open_path, 55)):
-        img = Image.new("RGBA", (int(size[0]), int(size[1])), (0,0,0,0))
+        img = Image.new("RGBA", (W, H), (0,0,0,0))
         d = ImageDraw.Draw(img)
-
-        pal = params['palette']
-        cx, cy = size[0]*0.46, size[1]*0.62
-        rx, ry = params['rx'], params['ry']
-        oblong = params['oblong']
-        rx, ry = fit_body_to_canvas(cx, cy, rx, ry, oblong, margin=20)
-
         bottom_y = cy + ry*oblong
-        overlap_in = max(10, 0.22*ry*oblong)
         leg_top  = bottom_y - overlap_in
-        body_span = (rx + ry*oblong) / 2.0
-        leg_w   = max(6, int(body_span * 0.12))
-        leg_len = max(32, int(body_span * 0.52))
+        leg_w   = max(6, int(((rx + ry*oblong) / 2.0) * 0.12))
         base_x = cx - rx*0.20
         spacing = rx * 0.28
         left_x  = base_x - spacing/2
         right_x = base_x + spacing/2
         d.rectangle([left_x  - leg_w/2, leg_top, left_x  + leg_w/2, leg_top + leg_len], fill=pal['base'])
         d.rectangle([right_x - leg_w/2, leg_top, right_x + leg_w/2, leg_top + leg_len], fill=pal['base'])
-
-        # ears flush
+        fill_body_opaque(img, cx, cy, rx, ry, pal['base'])
         draw_ears_flush_on_top(d, cx, cy, rx, ry, oblong, params['ear_type'], pal['base'])
-        # body
         draw_body(d, cx, cy, rx, ry, pal, params['body_mode'], params['body_param'], oblong_scale=oblong)
-
-        # pattern
         if params['pattern'] == 'gradient':
             draw_gradient_pattern(img, cx, cy, rx, ry, pal['accent'], pal['base'])
         elif params['pattern'] == 'stripes':
             draw_stripes_pattern(img, cx, cy, rx, ry, pal['accent'])
-
-        # face
         draw_eye(d, cx, cy, rx, ry, pal, eye_shape=params['eye_shape'], eye_scale=params['eye_scale'])
         draw_mouth(d, cx, cy, rx, ry, open_deg=mouth_deg)
-
         img.save(path)
-
-    print(f"[creature_render_simple] saved:\n  {closed_path}\n  {open_path}")
     return closed_path, open_path
