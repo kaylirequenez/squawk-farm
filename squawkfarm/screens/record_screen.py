@@ -11,7 +11,11 @@ from kivy.clock import Clock
 from collections import deque
 from kivy.uix.image import Image
 
+import glob
 from imslib.writer import AudioWriter
+from ..services.animal_gen import render_creature_image
+from ..models.animal import Animal
+
 
 
 class RecordScreen(Screen):
@@ -181,6 +185,45 @@ class RecordScreen(Screen):
         if self.is_recording:
             self.is_recording = False
             self.audio_writer.stop()
+            print("RECORDING SAVED")
+
+
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            rec_dir = os.path.join(base_dir, "data", "recordings")
+            candidates = sorted(
+                glob.glob(os.path.join(rec_dir, "*.wav")),
+                key=os.path.getmtime
+            )
+
+            if candidates:
+                wav_path = candidates[-1]
+
+                animal_id = os.path.splitext(os.path.basename(wav_path))[0]
+
+                out_dir = os.path.join(base_dir, "data", "animals", animal_id)
+                out_path = os.path.join(out_dir, "open.png")
+
+                render_creature_image(wav_path, out_dir, size=(640, 480))
+                print(f"CREATURE IMAGE SAVED at {out_path}")
+
+                animal = Animal(
+                    animal_id=animal_id,
+                    image_path=out_path,
+                    recording_path=wav_path,
+                    pos=(50, 50),          
+                    size=(100,100)
+                )
+
+
+
+                garden = next((s for s in self.manager.screens if s.name == 'garden'), None)
+                garden.add_or_update_animal(animal)
+                
+            else:
+                print("[creature] no .wav files found in data/recordings")
+
+            
+
 
         # reset button
         self.record_btn.text = "Record"
@@ -191,7 +234,7 @@ class RecordScreen(Screen):
 
         # go back to garden
         if self.manager:
-            self.switch_to('loop')
+            self.switch_to('garden')
 
     # ------------------------------------------------------------------
     # audio → waveform

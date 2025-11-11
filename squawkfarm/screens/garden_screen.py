@@ -10,13 +10,16 @@ from kivy.uix.button import Button
 from kivy.graphics.opengl import glEnable, glBlendFunc, GL_BLEND, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA
 from kivy.clock import Clock
 from collections import deque
-
+from ..models.animal import Animal
 
 class GardenScreen(Screen):
     """Main farm/garden view where animals are shown and global loop settings can be adjusted."""
     def __init__(self, **kwargs):
         super(GardenScreen, self).__init__(**kwargs)
         self.num_animals = 0  # starting number of animals
+
+        self.animals = {}
+        self.animal_widgets = {}
         
         self.farm_path = self._get_ui_asset_path("4x4Farm.png")
         self.sun_path = self._get_ui_asset_path("cutes.png")
@@ -61,6 +64,45 @@ class GardenScreen(Screen):
             self.sun_rect = Rectangle(pos=(0, 0), size=(self.s_size, self.s_size), texture=self.sun)
         # update background size when Window changes
         Window.bind(size=self.on_resize)
+
+
+    def _barn_anchor_pos_size(self):
+        return self.barn_button.pos, self.barn_button.size
+    
+    def add_or_update_animal(self, animal: Animal):
+
+        self.animals[animal.animal_id] = animal
+        w = self.animal_widgets.get(animal.animal_id)
+
+        pos = animal.pos
+        size = animal.size
+
+        if w is None:
+
+            print(animal.image_path)
+            w = Image(source=animal.image_path, size_hint=(None, None))
+
+            print(w)
+            w.size = size
+            w.pos = pos
+
+            #temporary override:
+            w.pos = ( np.random.randint(100, 500), np.random.randint(100, 500)) 
+            
+            print("POSITION")
+            print(w.pos)
+            w.size = (3000, 3000)
+            self.animal_widgets[animal.animal_id] = w
+            self.add_widget(w)
+        else:
+
+            if w.source != animal.image_path:
+                w.source = animal.image_path
+                w.reload()
+
+            w.size = size
+            w.pos = pos
+
         
     def _get_ui_asset_path(self, filename):
         # Path calculation assumes the script is in squawkfarm/screens/
