@@ -91,7 +91,7 @@ class GardenScreen(Screen):
             
             print("POSITION")
             print(w.pos)
-            w.size = (3000, 3000)
+            w.size = (1000, 1000)
             self.animal_widgets[animal.animal_id] = w
             self.add_widget(w)
         else:
