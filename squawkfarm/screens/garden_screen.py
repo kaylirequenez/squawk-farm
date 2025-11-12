@@ -25,6 +25,10 @@ class GardenScreen(Screen):
 
         self.animals = {}
         self.animal_widgets = {}
+
+        self.animal_images = {}  # {animal_id: {"open": path, "closed": path}}
+        self.active_animal_id = None
+
         
         self.farm_path = get_ui_asset_path("4x4Farm.png")
         self.sun_path = get_ui_asset_path("cutes.png")
@@ -71,43 +75,43 @@ class GardenScreen(Screen):
         Window.bind(size=self.on_resize)
 
 
+    def _derive_open_closed_paths(self, open_path: str):
+        if open_path.endswith("open.png"):
+            closed_path = open_path[:-len("open.png")] + "closed.png"
+        return open_path, closed_path
+
     def _barn_anchor_pos_size(self):
         return self.barn_button.pos, self.barn_button.size
     
     def add_or_update_animal(self, animal: Animal):
-
         self.animals[animal.animal_id] = animal
         w = self.animal_widgets.get(animal.animal_id)
 
         pos = animal.pos
         size = animal.size
 
+
+        open_path, closed_path = self._derive_open_closed_paths(animal.image_path)
+        self.animal_images[animal.animal_id] = {"open": open_path, "closed": closed_path}
+
         if w is None:
-
-            print(animal.image_path)
-            w = Image(source=animal.image_path, size_hint=(None, None))
-            print(animal.image_path)
-
-            print(w)
+            w = Image(source=closed_path, size_hint=(None, None))
             w.size = size
             w.pos = pos
 
-            #temporary override:
-            w.pos = (0, 0) 
-            
-            print("POSITION")
-            print(w.pos)
+            w.pos = (0, 0)
             w.size = (1000, 1000)
+
             self.animal_widgets[animal.animal_id] = w
             self.add_widget(w)
         else:
-
-            if w.source != animal.image_path:
-                w.source = animal.image_path
+            if w.source != closed_path:
+                w.source = closed_path
                 w.reload()
 
             w.size = size
             w.pos = pos
+
 
     def build_scene(self):
         # kept for compatibility if other code calls it; background is built in __init__
@@ -130,9 +134,12 @@ class GardenScreen(Screen):
         
     def sing(self):
         print("animal is opening mouth")
+        self._set_animal_face(self.active_animal_id, "open")
+
         
     def close_mouth(self):
         print("animal is closing mouth")
+        self._set_animal_face(self.active_animal_id, "closed")
     
     def on_barn_press(self, instance):
         self.switch_to('record')
@@ -142,8 +149,21 @@ class GardenScreen(Screen):
             animal_ids = list(self.animals.keys())
             if len(animal_ids) > 0:
                 animal_id = animal_ids[-1]
-                print(animal_id)
+                self.active_animal_id = animal_id 
                 self.loop_engine.play_loop(animal_id, self.sing, self.close_mouth)
                 
+
+    def _set_animal_face(self, animal_id: str, face: str):
+        if animal_id is None:
+            return
+        w = self.animal_widgets.get(animal_id)
+        paths = self.animal_images.get(animal_id)
+        if not w or not paths:
+            return
+        target = paths.get(face)
+        if target and w.source != target:
+            w.source = target
+            w.reload()
+            
     def on_update(self):
         self.loop_engine.on_update()
