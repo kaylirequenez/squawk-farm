@@ -63,7 +63,7 @@ class AudioWriter(object):
             self.active = True
             self.buffers = []
 
-    def stop(self):
+    def stop(self, filename=None):
         """
         Stops recording audio frames by ignoring any calls to :meth:`add_audio`.
         """
@@ -77,7 +77,8 @@ class AudioWriter(object):
                 print("AudioWriter: empty buffers. Nothing to write")
                 return
 
-            filename = self._get_filename("wav")
+            filename = os.path.join(self.filebase, filename + ".wav") if filename else self._get_filename("wav")
+            
             print("AudioWriter: saving", len(output), "samples in", filename)
             write_wave_file(output, self.num_channels, filename)
 

@@ -1,8 +1,8 @@
 import os, math, random, numpy as np, librosa
 from PIL import Image, ImageDraw
 
-def analyze_env(path, sr=16000, frame=1024, hop=256):
-    y, sr = librosa.load(path, sr=sr, mono=True)
+def analyze_env(path, sr=16000, frame=1024, hop=256, offset=None, duration=None):
+    y, sr = librosa.load(path, sr=sr, mono=True, offset=offset, duration=duration)
     rms = librosa.feature.rms(y=y, frame_length=frame, hop_length=hop)[0]
     if rms.max() > 0: rms = rms / rms.max()
     rms = np.sqrt(rms)
@@ -203,11 +203,11 @@ def _ear_up_extent(rx, ry, oblong, ear_type):
     else:
         return ry * 0.58
 
-def render_creature_image(wav_path, out_dir, size=(W_FRAME, H_FRAME), seed=None):
+def render_creature_image(wav_path, out_dir, size=(W_FRAME, H_FRAME), offset=None, duration=None, seed=None):
     os.makedirs(out_dir, exist_ok=True)
     closed_path = os.path.join(out_dir, "closed.png")
     open_path   = os.path.join(out_dir, "open.png")
-    y, sr, _env = analyze_env(wav_path, sr=16000)
+    y, sr, _env = analyze_env(wav_path, sr=16000, offset=offset, duration=duration)
     params = params_from_audio(y, sr, seed=seed)
     W, H = int(size[0]), int(size[1])
     pal = params['palette']

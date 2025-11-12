@@ -17,6 +17,7 @@ from kivy.graphics import Rectangle, Color, Line
 from kivy.uix.image import Image
 from kivy.uix.button import Button
 from kivy.clock import Clock
+from squawkfarm.utils import get_ui_asset_path, get_recording_wav_path, get_animal_data_dir, get_recordings_dir
 
 
 class LoopEditorScreen(Screen):
@@ -62,28 +63,17 @@ class LoopEditorScreen(Screen):
         # Bind resize
         Window.bind(size=self.on_resize)
 
-    def on_enter(self, *args):
+    def on_enter(self, animal_id: str, num_slots: int):
         # Draw UI each time we enter to reflect any new recordings
+        self.animal_id = animal_id
+        self.num_slots = num_slots
+        self.wav = get_recording_wav_path(animal_id)
+        self.waveform_points = self._load_waveform_points_from_file(self.wav)
         self._draw_board_and_waveform()
 
     def on_leave(self, *args):
         # cleanup if needed
         pass
-
-    def _get_recordings_dir(self):
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        recordings_dir = os.path.join(base_dir, "data", "recordings")
-        return recordings_dir
-
-    def _find_latest_recording(self):
-        recordings_dir = self._get_recordings_dir()
-        if not os.path.isdir(recordings_dir):
-            return None
-        files = [os.path.join(recordings_dir, f) for f in os.listdir(recordings_dir) if os.path.isfile(os.path.join(recordings_dir, f))]
-        if not files:
-            return None
-        latest = max(files, key=os.path.getmtime)
-        return latest
 
     def _load_waveform_points_from_file(self, path, decimation=20):
         try:
@@ -160,11 +150,7 @@ class LoopEditorScreen(Screen):
         self.right_marker_line = None
 
         # draw wood board in canvas.before so it's behind widgets
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        woodB_path = os.path.join(base_dir, "assets", "ui_images", "woodB2.png")
-        if not os.path.isfile(woodB_path):
-            # fallback to relative path used elsewhere
-            woodB_path = os.path.join(os.path.dirname(__file__), "../../assets/ui_images/woodB2.png")
+        woodB_path = get_ui_asset_path("woodB2.png")
         wood_tex = Image(source=woodB_path).texture if os.path.exists(woodB_path) else None
         with self.canvas.before:
             Color(1, 1, 1, 1)
@@ -196,14 +182,6 @@ class LoopEditorScreen(Screen):
         )
         self.barn_button.bind(on_press=self.on_barn_press)
         self.add_widget(self.barn_button)
-
-        # Draw waveform in canvas so it's visible centered on screen
-        # Load latest recording
-        latest = self._find_latest_recording()
-        if latest:
-            self.waveform_points = self._load_waveform_points_from_file(latest)
-        else:
-            self.waveform_points = []
 
         # compute points across central 13/15ths of screen
         width = Window.width
@@ -249,14 +227,14 @@ class LoopEditorScreen(Screen):
             Color(1, 1, 1, 1)
             # barn texture on canvas (for visual only)
             try:
-                trash_path = os.path.join(base_dir, "assets", "ui_images", "trash.png")
+                trash_path = get_ui_asset_path("trashcan2.png")
                 trash_tex = Image(source=trash_path).texture if os.path.exists(trash_path) else None
                 if trash_tex and self.trash_button:
                     self.trash_rect = Rectangle(pos=self.trash_button.pos, size=self.trash_button.size, texture=trash_tex)
             except Exception:
                 pass
             try:
-                barn_path = os.path.join(base_dir, "assets", "ui_images", "redbarn2.png")
+                barn_path = get_ui_asset_path("redbarn2.png")
                 barn_tex = Image(source=barn_path).texture if os.path.exists(barn_path) else None
                 if barn_tex and self.barn_button:
                     self.barn_rect = Rectangle(pos=self.barn_button.pos, size=self.barn_button.size, texture=barn_tex)
@@ -293,20 +271,6 @@ class LoopEditorScreen(Screen):
                 
                 # Extract the segment
                 audio_segment = self.raw_audio_data[left_sample:right_sample]
-                
-                # Find the original recording file name and create a "final" version
-                latest = self._find_latest_recording()
-                if latest:
-                    # Get the base filename without extension
-                    base_name = os.path.splitext(os.path.basename(latest))[0]
-                    
-                    # Create the final filename (e.g., recording25.wav -> recording25final.wav)
-                    recordings_dir = self._get_recordings_dir()
-                    final_filename = os.path.join(recordings_dir, f"{base_name}final.wav")
-                    
-                    # Save the trimmed audio
-                    sf.write(final_filename, audio_segment, self.sample_rate)
-                    print(f"Saved trimmed audio to {final_filename}")
             except Exception as e:
                 print(f"Error saving trimmed audio: {e}")
         
@@ -474,9 +438,6 @@ class LoopEditorScreen(Screen):
     def on_touch_down(self, touch):
         """Handle touch down on markers"""
         # Check if touching near left or right marker (within 30 pixels)
-        margin = Window.width / 15
-        draw_width = Window.width - 2 * margin
-        center_y = Window.height / 2
         marker_touch_tolerance = 30
         
         if abs(touch.x - self.left_marker_x) < marker_touch_tolerance:
@@ -602,14 +563,13 @@ class LoopEditorScreen(Screen):
                 Color(1, 1, 1, 1)
                 # Redraw barn texture
                 try:
-                    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
                     # trash texture
-                    trash_path = os.path.join(base_dir, "assets", "ui_images", "trash.png")
+                    trash_path = get_ui_asset_path("trashcan2.png")
                     trash_tex = Image(source=trash_path).texture if os.path.exists(trash_path) else None
                     if trash_tex and self.trash_button:
                         self.trash_rect = Rectangle(pos=self.trash_button.pos, size=self.trash_button.size, texture=trash_tex)
                     # barn texture
-                    barn_path = os.path.join(base_dir, "assets", "ui_images", "redbarn2.png")
+                    barn_path = get_ui_asset_path("redbarn2.png")
                     barn_tex = Image(source=barn_path).texture if os.path.exists(barn_path) else None
                     if barn_tex and self.barn_button:
                         self.barn_rect = Rectangle(pos=self.barn_button.pos, size=self.barn_button.size, texture=barn_tex)

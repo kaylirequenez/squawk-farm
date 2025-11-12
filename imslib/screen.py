@@ -33,12 +33,12 @@ class Screen(Widget):
         # get set when this screen is added to the screen manager
         self.manager = None
 
-    def switch_to(self, screen_name):
+    def switch_to(self, screen_name, *args):
         """Switches to from the current screen to a different screen.
 
         :param screen_name: the name of the screen
         """
-        self.manager.switch_to(screen_name)
+        self.manager.switch_to(screen_name, *args)
 
     def on_key_down(self, keycode, modifiers):
         """Override to receive keydown events. Only called when active.
@@ -116,12 +116,12 @@ class ScreenManager(BaseWidget):
         if set_current:
             self.switch_to(screen.name)
 
-    def switch_to(self, screen_name):
+    def switch_to(self, screen_name, *args):
         """Switches to from the current screen to a different screen.
 
         :param screen_name: the name of the screen
         """
-        kivyClock.schedule_once(lambda dt: self._switch_to(screen_name))
+        kivyClock.schedule_once(lambda dt: self._switch_to(screen_name, *args))
 
     def on_key_down(self, keycode, modifiers):
         """"""
@@ -144,7 +144,7 @@ class ScreenManager(BaseWidget):
             if s == self.cur_screen or s.always_update:
                 s.on_update()
 
-    def _switch_to(self, screen_name):
+    def _switch_to(self, screen_name, *args):
         if self.cur_screen:
             self.cur_screen.on_exit()
             self.remove_widget(self.cur_screen)
@@ -152,7 +152,7 @@ class ScreenManager(BaseWidget):
         next_screen = [s for s in self.screens if s.name == screen_name]
         if next_screen:
             self.cur_screen = next_screen[0]
-            self.cur_screen.on_enter()
+            self.cur_screen.on_enter(*args)
             self.add_widget(self.cur_screen)
         else:
             raise Exception("Error: Screen name {} not found".format(screen_name))

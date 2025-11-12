@@ -3,11 +3,11 @@
 Defines a minimal Kivy App subclass and attaches a ScreenManager.
 """
 
-from imslib.audio import Audio
 from imslib.screen import ScreenManager
 from squawkfarm.models.loop import GlobalLoopSettings
 from squawkfarm.screens.garden_screen import GardenScreen
 from squawkfarm.screens.loop_editor_screen import LoopEditorScreen
+from squawkfarm.screens.loop_placement_screen import LoopPlacementScreen
 from squawkfarm.screens.record_screen import RecordScreen
 from squawkfarm.services.loop_engine import LoopEngine
 
@@ -16,7 +16,6 @@ from squawkfarm.services.loop_engine import LoopEngine
 class Globals:
     def __init__(self):
         self.loop_engine = LoopEngine(GlobalLoopSettings())
-        self.animals = {}
 
 
 def build_app():
@@ -24,4 +23,5 @@ def build_app():
     sm.add_screen(GardenScreen(name="garden"))
     sm.add_screen(RecordScreen(name="record"))
     sm.add_screen(LoopEditorScreen(name="loop"))
+    sm.add_screen(LoopPlacementScreen(name="loop_placement"))
     return sm

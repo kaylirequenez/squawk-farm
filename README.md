@@ -12,9 +12,13 @@ squawk-farm/
 │   │
 │   ├── screens/                 # all UI screens (Kivy Screen subclasses)
 │   │   ├── __init__.py
-│   │   ├── garden_screen.py     # main “garden” view
+│   │   ├── garden_screen.py     # main "garden" view
 │   │   ├── record_screen.py     # record a new animal sound
 │   │   └── loop_editor_screen.py# edit loops / beat grid
+│   │
+│   ├── ui/                      # reusable UI widgets
+│   │   ├── __init__.py
+│   │   └── loop_grid.py         # visual grid for tempo/measure display
 │   │
 │   ├── services/                # app logic (no UI here)
 │   │   ├── __init__.py
@@ -32,7 +36,9 @@ squawk-farm/
 │   │
 │   └── utils/                   # small helpers
 │       ├── __init__.py
-│       └── audio_utils.py       # load/save wav, paths, normalization
+│       ├── audio_utils.py       # load/save wav, paths, normalization
+│       ├── path_utils.py        # construct paths to project assets and data
+│       └── ui_utils.py          # UI helper functions (paths, assets)
 │
 ├── imslib/                      # teacher-provided helper modules
 │

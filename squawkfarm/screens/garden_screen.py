@@ -10,21 +10,26 @@ from kivy.uix.button import Button
 from kivy.graphics.opengl import glEnable, glBlendFunc, GL_BLEND, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA
 from kivy.clock import Clock
 from collections import deque
+
+from squawkfarm.services.loop_engine import LoopEngine
 from ..models.animal import Animal
+from squawkfarm.utils import get_ui_asset_path
+
 
 class GardenScreen(Screen):
     """Main farm/garden view where animals are shown and global loop settings can be adjusted."""
     def __init__(self, **kwargs):
         super(GardenScreen, self).__init__(**kwargs)
+        self.loop_engine: LoopEngine = self.globals.loop_engine
         self.num_animals = 0  # starting number of animals
 
         self.animals = {}
         self.animal_widgets = {}
         
-        self.farm_path = self._get_ui_asset_path("4x4Farm.png")
-        self.sun_path = self._get_ui_asset_path("cutes.png")
-        self.barn_path = self._get_ui_asset_path("redbarn2.png")
-        self.woodB_path = self._get_ui_asset_path("woodB2.png") 
+        self.farm_path = get_ui_asset_path("4x4Farm.png")
+        self.sun_path = get_ui_asset_path("cutes.png")
+        self.barn_path = get_ui_asset_path("redbarn2.png")
+        self.woodB_path = get_ui_asset_path("woodB2.png") 
 
         # path from this file (squawkfarm/screens) up to project root: ../../assets/...
         self.bg_image = Image(source = self.farm_path).texture
@@ -81,13 +86,14 @@ class GardenScreen(Screen):
 
             print(animal.image_path)
             w = Image(source=animal.image_path, size_hint=(None, None))
+            print(animal.image_path)
 
             print(w)
             w.size = size
             w.pos = pos
 
             #temporary override:
-            w.pos = ( np.random.randint(100, 500), np.random.randint(100, 500)) 
+            w.pos = (0, 0) 
             
             print("POSITION")
             print(w.pos)
@@ -102,12 +108,6 @@ class GardenScreen(Screen):
 
             w.size = size
             w.pos = pos
-
-        
-    def _get_ui_asset_path(self, filename):
-        # Path calculation assumes the script is in squawkfarm/screens/
-        base_dir = os.path.dirname(__file__)
-        return os.path.join(base_dir, "../../assets/ui_images", filename)
 
     def build_scene(self):
         # kept for compatibility if other code calls it; background is built in __init__
@@ -127,7 +127,23 @@ class GardenScreen(Screen):
         self.barn_rect.size = new_size
         self.barn_button.pos = new_pos 
         self.barn_rect.pos = new_pos
+        
+    def sing(self):
+        print("animal is opening mouth")
+        
+    def close_mouth(self):
+        print("animal is closing mouth")
     
     def on_barn_press(self, instance):
         self.switch_to('record')
     
+    def on_key_down(self, keycode, modifiers):
+        if keycode[1] == "spacebar":
+            animal_ids = list(self.animals.keys())
+            if len(animal_ids) > 0:
+                animal_id = animal_ids[-1]
+                print(animal_id)
+                self.loop_engine.play_loop(animal_id, self.sing, self.close_mouth)
+                
+    def on_update(self):
+        self.loop_engine.on_update()

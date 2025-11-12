@@ -1,7 +1,5 @@
 """Audio utilities: loading, saving, normalization helpers."""
-
 from typing import Tuple
-
 
 def load_wav(path: str) -> Tuple[int, bytes]:
     """Load a WAV file. Returns (sample_rate, raw_bytes).
