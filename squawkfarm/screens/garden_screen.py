@@ -20,6 +20,7 @@ from kivy.clock import Clock
 from collections import deque
 
 from squawkfarm.services.loop_engine import LoopEngine
+from squawkfarm.services.arpeggio_processor import build_arpeggiated_loop_for_animal
 from ..models.animal import Animal
 from squawkfarm.widgets.animal_widget import AnimalWidget
 from squawkfarm.utils import get_ui_asset_path
@@ -43,7 +44,6 @@ class GardenScreen(Screen):
 
         self.bg_image = Image(source=self.farm_path).texture
         self.buttons = {}
-
         Window.clearcolor = (0.5, 0.2, 1, 1)
 
         self.sun = Image(source=self.sun_path, keep_data=True).texture
@@ -104,6 +104,13 @@ class GardenScreen(Screen):
         else:
             widget.update_from_animal(animal)
 
+        if getattr(animal, "recording_path", None):
+            build_arpeggiated_loop_for_animal(
+                self.loop_engine,
+                animal.animal_id,
+                animal.recording_path,
+            )
+
     def on_sing(self, animal_id: str):
         widget = self.animal_widgets.get(animal_id)
         if widget is not None:
@@ -130,12 +137,6 @@ class GardenScreen(Screen):
             return
 
         widget.speak_once()
-
-        if animal_id in self.loop_engine.loops:
-            existing_slots = self.loop_engine.get_start_slots(animal_id)
-            if not existing_slots:
-                self.loop_engine.add_loop_to_grid(animal_id, [0])
-
         self.loop_engine.toggle_play(loop=True)
 
     def on_update(self):

@@ -1,6 +1,7 @@
 import os, math, random, numpy as np, librosa
 
 from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageOps, ImageChops
 
 
 def analyze_env(path, sr=16000, frame=1024, hop=256, offset=None, duration=None):
@@ -70,31 +71,55 @@ def body_mask(size, cx, cy, rx, ry):
     return mask
 
 def draw_stripes_pattern(img, cx, cy, rx, ry, color):
-    mask = body_mask(img.size, cx, cy, rx, ry)
-    layer = Image.new("RGBA", img.size, (0,0,0,0))
+    body = body_mask(img.size, cx, cy, rx, ry)
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
     d = ImageDraw.Draw(layer)
-    stripe_w = max(6, int(rx*0.18)); gap = stripe_w
-    x = int(cx-rx)
-    while x < int(cx+rx):
-        d.rectangle([x, cy-ry, x+stripe_w, cy+ry], fill=color)
+
+    stripe_w = max(6, int(rx * 0.18))
+    gap = stripe_w
+    x = int(cx - rx)
+
+    while x < int(cx + rx):
+        d.rectangle([x, cy - ry, x + stripe_w, cy + ry], fill=color)
         x += stripe_w + gap
-    img.paste(layer, (0,0), mask)
+
+    alpha = layer.split()[3]
+    combined_mask = ImageChops.multiply(body, alpha)
+
+    img.paste(layer, (0, 0), combined_mask)
+
 
 def draw_gradient_pattern(img, cx, cy, rx, ry, color_from, color_to):
-    mask = body_mask(img.size, cx, cy, rx, ry)
-    layer = Image.new("RGBA", img.size, (0,0,0,0))
-    grad = Image.new("RGBA", (int(2*rx), int(2*ry)), (0,0,0,0))
+    body = body_mask(img.size, cx, cy, rx, ry)
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+
+    grad = Image.new("RGBA", (int(2 * rx), int(2 * ry)), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
-    span = int(min(2*rx, 2*ry))
+    span = int(min(2 * rx, 2 * ry))
+
     for i in range(span, 0, -4):
         t = i / float(span)
-        r = int(color_from[0]*t + color_to[0]*(1-t))
-        g = int(color_from[1]*t + color_to[1]*(1-t))
-        b = int(color_from[2]*t + color_to[2]*(1-t))
-        a = int(90*(1-t)+12)
-        gd.ellipse([(grad.size[0]-i)/2, (grad.size[1]-i)/2, (grad.size[0]+i)/2, (grad.size[1]+i)/2], fill=(r,g,b,a))
-    layer.paste(grad, (int(cx-rx), int(cy-ry)))
-    img.paste(layer, (0,0), mask)
+        r = int(color_from[0] * t + color_to[0] * (1 - t))
+        g = int(color_from[1] * t + color_to[1] * (1 - t))
+        b = int(color_from[2] * t + color_to[2] * (1 - t))
+        a = int(90 * (1 - t) + 12)
+        gd.ellipse(
+            [
+                (grad.size[0] - i) / 2,
+                (grad.size[1] - i) / 2,
+                (grad.size[0] + i) / 2,
+                (grad.size[1] + i) / 2,
+            ],
+            fill=(r, g, b, a),
+        )
+
+    layer.paste(grad, (int(cx - rx), int(cy - ry)))
+
+    alpha = layer.split()[3]
+    combined_mask = ImageChops.multiply(body, alpha)
+
+    img.paste(layer, (0, 0), combined_mask)
+
 
 def body_top_y_at_x(cx, cy, rx, ry, oblong, x):
     dx2 = ((x - cx) / rx) ** 2
