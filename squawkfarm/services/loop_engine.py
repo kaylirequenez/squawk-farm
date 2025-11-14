@@ -254,17 +254,16 @@ class LoopEngine(object):
     # ======================================================================
     # Adding & deleting new loops
     # ======================================================================
-    def animal_has_loop(self, animal_id: str) -> bool:
-        """Returns True if the animal ID exists."""
-        return animal_id in self.loops
-    
-    def add_animal_loop(self, animal_id: str, audio_path: str) -> None:
+    def add_or_update_animal_loop(self, animal_id: str, audio_path: str) -> None:
         """
-        Adds a new animal loop to the engine.
-        Call this as soon as user records audio before animal generation occurs.
+        Adds or updates an animal loop.
+        Call this as soon as user records audio.
         """
-        self.loops[animal_id] = Loop(audio_path)
-        
+        if animal_id in self.loops:
+            self.loops[animal_id].update_recording(audio_path)
+        else:
+            self.loops[animal_id] = Loop(audio_path)
+
     def del_animal_loop(self, animal_id: str) -> None:
         """
         Deletes an animal loop from the engine.
@@ -290,14 +289,6 @@ class LoopEngine(object):
     # Call these after user records audio and wants to make edits
     # Each expects slots in terms of number of slots in original recording
     # ======================================================================
-    def change_audio_of_recording(self, animal_id: str, audio_path: str) -> None:
-        """
-        Change the audio file path of the recording for this animal.
-        Call this when user re-records audio for this animal.
-        """
-        loop = self.loops[animal_id]
-        loop.update_recording(audio_path)
-    
     def set_left_margin_of_recording(self, animal_id: str, slot: int) -> None:
         """
         Set the left margin of the recorded audio. 
@@ -354,16 +345,18 @@ class LoopEngine(object):
     # ======================================================================
     # Call these when user editing global loop grid
     # ======================================================================
-    def add_loop_to_grid(self, animal_id: str, start_slot: int) -> None:
-        """Adds a new loop instance to the global grid at start_slot."""
+    def add_loop_to_grid(self, animal_id: str, slots: list[int]) -> None:
+        """Adds loop instances at the specified slots."""
         loop = self.loops[animal_id]
-        loop.add_to_grid(start_slot)
+        for start_slot in slots:
+            loop.add_to_grid(start_slot)
     
-    def del_loop_from_grid(self, animal_id: str, start_slot: int) -> None:
-        """Deletes a loop instance from the global grid at start_slot."""
+    def del_loop_from_grid(self, animal_id: str, slots: list[int]) -> None:
+        """Deletes loop instances from the global grid at the specified slots."""
         loop = self.loops.get(animal_id)
-        loop.del_from_grid(start_slot)
-        
+        for start_slot in slots:
+            loop.del_from_grid(start_slot)
+
     # ======================================================================
     # audio scheduling
     # ======================================================================  

@@ -1,20 +1,21 @@
 """Screen for recording a new animal sound."""
 import os
 import uuid
-from kivy.uix.button import Button
 import numpy as np
-from datetime import datetime
-from imslib.audio import Audio
-from imslib.screen import Screen
+
+from kivy.uix.button import Button
 from kivy.core.window import Window
 from kivy.graphics import Color, Line
 from kivy.clock import Clock
 
+from imslib.audio import Audio
+from imslib.screen import Screen
 from imslib.writer import AudioWriter
+
 from squawkfarm.services.loop_engine import LoopEngine
 from squawkfarm.ui.loop_grid import LoopGrid
-from ..services.animal_gen import render_creature_image
-from ..models.animal import Animal
+from squawkfarm.services.animal_gen import render_creature_image
+from squawkfarm.models.animal import Animal
 from squawkfarm.utils import get_recording_wav_path, get_animal_data_dir, get_recordings_dir
 
 
@@ -94,36 +95,58 @@ class RecordScreen(Screen):
         self.dragging_marker = None  # None, 'left', or 'right'
         
     # ------------------------------------------------------------------
-    # lifecycle
+    # Helper Methods
+    # ------------------------------------------------------------------
+    def _set_editing_buttons_visible(self, visible: bool):
+        """Show or hide the editing buttons (Add to Loop and Sample)."""
+        self.add_loop_btn.disabled = not visible
+        self.add_loop_btn.opacity = 1 if visible else 0
+        self.sample_button.disabled = not visible
+        self.sample_button.opacity = 1 if visible else 0
+    
+    def _add_button_widgets(self):
+        """Add all button widgets to the screen."""
+        self.add_widget(self.record_btn)
+        self.add_widget(self.add_loop_btn)
+        self.add_widget(self.sample_button)
+    
+    def _remove_button_widgets(self):
+        """Remove all button widgets from the screen."""
+        self.remove_widget(self.record_btn)
+        self.remove_widget(self.add_loop_btn)
+        self.remove_widget(self.sample_button)
+        
+    # ------------------------------------------------------------------
+    # Lifecycle
     # ------------------------------------------------------------------
     def on_enter(self, *_):
+        """Initialize screen when entering."""
         self.animal_id = str(uuid.uuid4())
         
-        # clear canvas layers you own
+        # Clear and rebuild canvas layers
         self.canvas.before.clear()
         self.canvas.clear()
 
-        # grid (full width)
+        # Add grid background
         self.grid = LoopGrid(
             loop_engine=self.loop_engine,
             num_slots=self.record_slots
         )
-        
-        self.canvas.before.clear()
         self.canvas.before.add(self.grid)
 
-        # waveform line
+        # Add waveform line
         with self.canvas:
             Color(0, 0.8, 0, 1)
-            self.wave_line = Line(points=[0, Window.height/2, Window.width, Window.height/2], width=1.5)
+            self.wave_line = Line(
+                points=[0, Window.height/2, Window.width, Window.height/2], 
+                width=1.5
+            )
         
-        # Add buttons AFTER canvas setup to ensure they appear on top
-        self.add_widget(self.record_btn)
-        self.add_widget(self.add_loop_btn)
-        self.add_widget(self.sample_button)  
+        # Add buttons after canvas setup to ensure they appear on top
+        self._add_button_widgets()
 
     def on_update(self):
-        # poll mic input and redraw waveform every frame when this screen is active
+        """Update audio and waveform visualization every frame."""
         if self.is_recording:
             self.mic.on_update()
             self._update_wave()
@@ -131,131 +154,121 @@ class RecordScreen(Screen):
         self.loop_engine.on_update()
         
     def on_resize(self, winsize):
+        """Handle window resize events."""
         if hasattr(self, 'grid'):
             self.grid.on_resize(winsize)
-        self.viz_scale = Window.height * 0.22
         
+        self.viz_scale = Window.height * 0.22
         self.add_loop_btn.pos = (Window.width - 180, 20)
         self.sample_button.pos = (Window.width / 2 - 50, Window.height - 60)
         
     def on_exit(self):
-        # reset markers
+        """Clean up when leaving the screen."""
+        # Reset markers
         self.left_marker_line = None
         self.right_marker_line = None
         
-        # hide add loop & sample buttons
-        self.add_loop_btn.disabled = True
-        self.add_loop_btn.opacity = 0
-        
-        self.sample_button.disabled = True
-        self.sample_button.opacity = 0
-        
+        # Hide and reset buttons
+        self._set_editing_buttons_visible(False)
         self.record_btn.text = "Record"
         
-        self.remove_widget(self.record_btn)
-        self.remove_widget(self.add_loop_btn)
-        self.remove_widget(self.sample_button)
+        # Remove widgets
+        self._remove_button_widgets()
         
+        # Stop any playing audio
         self.loop_engine.pause()
 
     # ------------------------------------------------------------------
     # UI Handlers
     # ------------------------------------------------------------------
-    # TODO: actually add button & if they press this before clicking add animal
-    # call loop_engine.del_animal_loop
     def _on_barn_press(self, *_):
-        # Button on_press passes the instance; accept it optionally
+        """Navigate back to garden screen."""
+        # TODO: Add button & call loop_engine.del_animal_loop if pressed before adding animal
         self.switch_to('garden')
         
     def _on_record_press(self, *_):
+        """Handle record button press."""
         if not self.is_recording:
             self._start_recording()
             
     def _on_sample_press(self, *_):
+        """Play back the recorded loop."""
         self.loop_engine.play_loop(self.animal_id)
 
     # ------------------------------------------------------------------
-    # recording control
+    # Recording Control
     # ------------------------------------------------------------------
-    # TODO: figure out why you can't drag lines when re-recording
     def _start_recording(self):
+        """Start audio recording and reset UI state."""
+        # Clear previous samples
         self.samples.clear()
-        self.samples = []
 
+        # Start recording
         self.is_recording = True
-        self.samples.clear()
         self.writer.start()
         self.record_btn.text = "Recording..."
         
+        # Remove old markers
         if self.left_marker_line:
             self.canvas.after.remove(self.left_marker_line)
-            self.left_marker_line = None
         if self.right_marker_line:
             self.canvas.after.remove(self.right_marker_line)
-            self.right_marker_line = None
         
-        # Hide add loop button & sample button
-        self.add_loop_btn.disabled = True
-        self.add_loop_btn.opacity = 0
-        
-        self.sample_button.disabled = True
-        self.sample_button.opacity = 0
-
-        # auto-finish after configured duration
-        Clock.schedule_once(lambda dt: self._finish_recording(), self.record_duration)
-        
-        # margin markers (draggable)
+        # Reset marker state
         self.left_marker_line = None
         self.right_marker_line = None
         self.left_marker_x = 0
         self.right_marker_x = Window.width
-        self.dragging_marker = None  # None, 'left', or 'right'
+        self.dragging_marker = None
+        
+        # Hide buttons during recording
+        self._set_editing_buttons_visible(False)
+
+        # Schedule automatic stop after duration
+        Clock.schedule_once(lambda dt: self._finish_recording(), self.record_duration)
 
     def _finish_recording(self):
-        """
-        Stop writer, reset UI, and go back to the garden screen.
-        """
+        """Stop recording and update UI."""
         self.is_recording = False
         self.record_btn.text = "Re-record"
         
+        # Save recording
         self.writer.stop(self.animal_id)
         
+        # Add to loop engine and draw margin controls
         self._add_loop()
         self._draw_margin_markers()
-        self.add_loop_btn.disabled = False
-        self.add_loop_btn.opacity = 1
-        self.sample_button.disabled = False
-        self.sample_button.opacity = 1
+        
+        # Show editing buttons
+        self._set_editing_buttons_visible(True)
         
     # ------------------------------------------------------------------
-    # post recording
+    # Post-Recording Processing
     # ------------------------------------------------------------------ 
     def _add_loop(self):
-        """Add the recorded loop to the LoopEngine."""
-        wav = get_recording_wav_path(self.animal_id)
-        if self.loop_engine.animal_has_loop(self.animal_id):
-            self.loop_engine.change_audio_of_recording(self.animal_id, wav)
-        else:   
-            self.loop_engine.add_animal_loop(self.animal_id, wav)
+        """Add or update the recorded loop in the LoopEngine."""
+        wav_path = get_recording_wav_path(self.animal_id)
+        self.loop_engine.add_or_update_animal_loop(self.animal_id, wav_path)
            
     def _draw_margin_markers(self):
-        """Draw draggable left/right margin markers at the edges."""
+        """Draw draggable left/right margin markers at recording boundaries."""
+        # Initialize marker positions at edges
         self.left_marker_slot = 0
         self.right_marker_slot = self.record_slots
         
-        left_x = self.grid.get_x_from_slot(self.left_marker_slot)
-        right_x = self.grid.get_x_from_slot(self.right_marker_slot)
+        self.left_marker_x = self.grid.get_x_from_slot(self.left_marker_slot)
+        self.right_marker_x = self.grid.get_x_from_slot(self.right_marker_slot)
         
-        # Don't use 'with', add directly
-        self.canvas.after.add(Color(1, 0, 0, 1))  # Red
+        # Add red marker lines directly to canvas.after
+        self.canvas.after.add(Color(1, 0, 0, 1))
         self.left_marker_line = Line(
-            points=[left_x, 0, left_x, Window.height],
+            points=[self.left_marker_x, 0, self.left_marker_x, Window.height],
             width=3
         )
         self.canvas.after.add(self.left_marker_line)
         
         self.right_marker_line = Line(
-            points=[right_x, 0, right_x, Window.height],
+            points=[self.right_marker_x, 0, self.right_marker_x, Window.height],
             width=3
         )
         self.canvas.after.add(self.right_marker_line)
@@ -268,26 +281,30 @@ class RecordScreen(Screen):
         self.left_marker_line.points = [self.left_marker_x, 0, self.left_marker_x, Window.height]
         self.right_marker_line.points = [self.right_marker_x, 0, self.right_marker_x, Window.height]
 
+    # ------------------------------------------------------------------
+    # Touch/Drag Handling for Margin Markers
+    # ------------------------------------------------------------------
     def on_touch_down(self, touch):
-        """Handle touch down on markers."""
+        """Detect if user touched a margin marker."""
         if not self.left_marker_line or not self.right_marker_line:
             return super(RecordScreen, self).on_touch_down(touch)
         
-        marker_tolerance = 30
-        if abs(touch.x - self.left_marker_x) < marker_tolerance:
+        MARKER_TOLERANCE = 30
+        
+        if abs(touch.x - self.left_marker_x) < MARKER_TOLERANCE:
             self.dragging_marker = 'left'
             touch.grab(self)
             return True
-        elif abs(touch.x - self.right_marker_x) < marker_tolerance:
+        elif abs(touch.x - self.right_marker_x) < MARKER_TOLERANCE:
             self.dragging_marker = 'right'
             touch.grab(self)
             return True
         
         return super(RecordScreen, self).on_touch_down(touch)
 
-    # TODO: don't left left & right cross
     def on_touch_move(self, touch):
-        """Handle marker dragging."""
+        """Update marker position while dragging."""
+        # TODO: Prevent left & right markers from crossing
         if self.dragging_marker and touch.grab_current == self:
             if self.dragging_marker == 'left':
                 self.left_marker_x = touch.x
@@ -300,21 +317,20 @@ class RecordScreen(Screen):
         return super(RecordScreen, self).on_touch_move(touch)
 
     def on_touch_up(self, touch):
-        """Handle touch release."""
+        """Snap marker to nearest slot and update loop engine."""
         if self.dragging_marker and touch.grab_current == self:
             touch.ungrab(self)
-                   
+            
+            # Snap to nearest slot and update engine
             if self.dragging_marker == 'left':
                 slot = self.grid.get_slot_from_x(self.left_marker_x)
                 self.left_marker_x = self.grid.get_x_from_slot(slot)
-                self.loop_engine.set_left_margin_of_recording(
-                    self.animal_id, slot)
+                self.loop_engine.set_left_margin_of_recording(self.animal_id, slot)
             elif self.dragging_marker == 'right':
                 slot = self.grid.get_slot_from_x(self.right_marker_x)
                 self.right_marker_x = self.grid.get_x_from_slot(slot)
-                self.loop_engine.set_right_margin_of_recording(
-                    self.animal_id, slot)
-                
+                self.loop_engine.set_right_margin_of_recording(self.animal_id, slot)
+            
             self._update_marker_lines()
             self.dragging_marker = None
             return True
@@ -322,43 +338,56 @@ class RecordScreen(Screen):
         return super(RecordScreen, self).on_touch_up(touch)
     
     def _add_animal(self, *_):
-        # write final clipped version to recordings
+        """Generate creature image and add animal to garden."""
         wav_path = get_recording_wav_path(self.animal_id)
-        
         out_dir = get_animal_data_dir(self.animal_id)
         out_path = os.path.join(out_dir, "open.png")
         
-        offset, duration = self.loop_engine.get_loop_offset(self.animal_id), self.loop_engine.get_loop_duration(self.animal_id)
+        # Get trimmed audio parameters
+        offset = self.loop_engine.get_loop_offset(self.animal_id)
+        duration = self.loop_engine.get_loop_duration(self.animal_id)
 
-        render_creature_image(wav_path, out_dir, size=(640, 480), offset=offset, duration=duration)
+        # Generate creature image based on audio
+        render_creature_image(
+            wav_path, out_dir, 
+            size=(640, 480), 
+            offset=offset, 
+            duration=duration
+        )
 
+        # Create animal model
         animal = Animal(
             animal_id=self.animal_id,
             image_path=out_path,
             recording_path=wav_path,
-            pos=(50, 50),          
-            size=(100,100)
+            pos=(50, 50),
+            size=(100, 100)
         )
 
+        # Add to garden and return to garden screen
         garden = next((s for s in self.manager.screens if s.name == 'garden'), None)
-        garden.add_or_update_animal(animal)
+        if garden:
+            garden.add_or_update_animal(animal)
         
         self.switch_to('garden')
 
     # ------------------------------------------------------------------
-    # audio → waveform
+    # Waveform Visualization
     # ------------------------------------------------------------------
     def _ingest_for_waveform(self, data, num_channels: int):
+        """Process incoming audio data for waveform display."""
         if not self.is_recording or len(self.samples) >= self.max_samples:
             return
 
+        # Convert to mono if needed
         mono = data[0::num_channels] if num_channels > 1 else data
         if mono.size == 0:
             return
 
+        # Decimate and apply soft clipping
         clipped = np.tanh(mono[::self.decimate] * 2.5)
 
-        # don't exceed max length
+        # Don't exceed max sample count
         remaining = self.max_samples - len(self.samples)
         if remaining <= 0:
             return
@@ -367,31 +396,34 @@ class RecordScreen(Screen):
 
         self.samples.extend(float(s) for s in clipped)
 
-    # TODO: figure out why wave glitches after recording ends
     def _update_wave(self):
+        """Redraw waveform based on collected samples."""
         cy = Window.height / 2
-
         n = len(self.samples)
+        
+        # Need at least 2 points for a line
         if n < 2:
             self.wave_line.points = [0, cy, Window.width, cy]
             return
 
-        # progress based on how many samples we actually have
-        progress = n / float(self.max_samples)
-        progress = max(0.0, min(1.0, progress))
-        max_x = Window.width * progress 
+        # Calculate horizontal progress
+        progress = max(0.0, min(1.0, n / float(self.max_samples)))
+        max_x = Window.width * progress
         if max_x <= 0:
             self.wave_line.points = [0, cy, Window.width, cy]
             return
 
+        # Scale waveform vertically to fit
         arr = np.asarray(self.samples, dtype=float)
         peak = float(np.max(np.abs(arr))) if arr.size else 0.0
         yscale = self.viz_scale if peak == 0.0 else min(self.viz_scale, (self.viz_scale * 0.9) / peak)
         ys = cy + arr * yscale
 
+        # Interleave x and y coordinates for Line.points
         xs = np.linspace(0.0, max_x, n, dtype=float)
         pts = np.empty(n * 2, dtype=float)
         pts[0::2], pts[1::2] = xs, ys
+        
         self.wave_line.points = pts.tolist()
 
     
