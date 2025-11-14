@@ -1,5 +1,7 @@
 import os, math, random, numpy as np, librosa
-from PIL import Image, ImageDraw
+
+from PIL import Image, ImageDraw, ImageOps
+
 
 def analyze_env(path, sr=16000, frame=1024, hop=256, offset=None, duration=None):
     y, sr = librosa.load(path, sr=sr, mono=True, offset=offset, duration=duration)
@@ -207,46 +209,79 @@ def render_creature_image(wav_path, out_dir, size=(W_FRAME, H_FRAME), offset=Non
     os.makedirs(out_dir, exist_ok=True)
     closed_path = os.path.join(out_dir, "closed.png")
     open_path   = os.path.join(out_dir, "open.png")
+
     y, sr, _env = analyze_env(wav_path, sr=16000, offset=offset, duration=duration)
     params = params_from_audio(y, sr, seed=seed)
+
     W, H = int(size[0]), int(size[1])
     pal = params['palette']
     rx, ry, oblong = params['rx'], params['ry'], params['oblong']
+
     ear_up = _ear_up_extent(rx, ry, oblong, params['ear_type'])
     body_span = (rx + ry*oblong) / 2.0
+
     leg_len = max(32, int(body_span * 0.52))
     overlap_in = max(10, 0.22*ry*oblong)
     leg_down = leg_len - overlap_in
+
     half_w_needed = rx * 1.16
     above = ry*oblong + ear_up
     below = ry*oblong + leg_down
     margin = 20
+
     sx = (W/2 - margin) / max(half_w_needed, 1e-6)
     sy = (H/2 - margin) / max(above, below, 1e-6)
     s = min(1.0, sx, sy)
-    rx *= s; ry *= s; ear_up *= s; leg_len = int(leg_len * s); overlap_in *= s; leg_down *= s
+
+    if s < 1.0:
+        rx *= s
+        ry *= s
+        ear_up *= s
+        leg_len = int(leg_len * s)
+        overlap_in *= s
+        leg_down *= s
+
     cx = W * 0.5
     cy = H * 0.5 + (leg_down - ear_up) / 2.0
-    for path, mouth_deg in ((closed_path, 8), (open_path, 55)):
-        img = Image.new("RGBA", (W, H), (0,0,0,0))
+
+    for name, mouth_deg in (("closed", 8), ("open", 55)):
+        path = os.path.join(out_dir, f"{name}.png")
+
+        img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        bottom_y = cy + ry*oblong
+
+        bottom_y = cy + ry * oblong
         leg_top  = bottom_y - overlap_in
         leg_w   = max(6, int(((rx + ry*oblong) / 2.0) * 0.12))
-        base_x = cx - rx*0.20
+        base_x = cx - rx * 0.20
         spacing = rx * 0.28
-        left_x  = base_x - spacing/2
-        right_x = base_x + spacing/2
-        d.rectangle([left_x  - leg_w/2, leg_top, left_x  + leg_w/2, leg_top + leg_len], fill=pal['base'])
-        d.rectangle([right_x - leg_w/2, leg_top, right_x + leg_w/2, leg_top + leg_len], fill=pal['base'])
+        left_x  = base_x - spacing / 2
+        right_x = base_x + spacing / 2
+
+        d.rectangle(
+            [left_x  - leg_w/2, leg_top, left_x  + leg_w/2, leg_top + leg_len],
+            fill=pal['base'],
+        )
+        d.rectangle(
+            [right_x - leg_w/2, leg_top, right_x + leg_w/2, leg_top + leg_len],
+            fill=pal['base'],
+        )
         fill_body_opaque(img, cx, cy, rx, ry, pal['base'])
         draw_ears_flush_on_top(d, cx, cy, rx, ry, oblong, params['ear_type'], pal['base'])
         draw_body(d, cx, cy, rx, ry, pal, params['body_mode'], params['body_param'], oblong_scale=oblong)
+
         if params['pattern'] == 'gradient':
             draw_gradient_pattern(img, cx, cy, rx, ry, pal['accent'], pal['base'])
         elif params['pattern'] == 'stripes':
             draw_stripes_pattern(img, cx, cy, rx, ry, pal['accent'])
+
         draw_eye(d, cx, cy, rx, ry, pal, eye_shape=params['eye_shape'], eye_scale=params['eye_scale'])
         draw_mouth(d, cx, cy, rx, ry, open_deg=mouth_deg)
+
         img.save(path)
+
+        left_path = os.path.join(out_dir, f"{name}_left.png")
+        flipped = ImageOps.mirror(img)
+        flipped.save(left_path)
+
     return closed_path, open_path

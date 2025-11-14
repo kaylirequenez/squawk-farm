@@ -1,4 +1,5 @@
-# squawkfarm/services/animal.py
+# squawkfarm/models/animal.py  (or wherever it currently lives)
+
 from dataclasses import dataclass
 from typing import Tuple, Optional
 
