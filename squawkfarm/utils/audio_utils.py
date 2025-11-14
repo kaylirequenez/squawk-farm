@@ -1,6 +1,16 @@
 """Audio utilities: loading, saving, normalization helpers."""
 from typing import Tuple
 
+from imslib.audio import Audio
+
+def frame_to_time(frame: int) -> float:
+    """Convert frame index to time in seconds."""
+    return frame / Audio.sample_rate
+
+def time_to_frame(time: float) -> int:
+    """Convert time in seconds to frame index."""
+    return int(time * Audio.sample_rate)
+
 def load_wav(path: str) -> Tuple[int, bytes]:
     """Load a WAV file. Returns (sample_rate, raw_bytes).
 

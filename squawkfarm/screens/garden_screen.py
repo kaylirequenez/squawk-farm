@@ -21,6 +21,7 @@ class GardenScreen(Screen):
     def __init__(self, **kwargs):
         super(GardenScreen, self).__init__(**kwargs)
         self.loop_engine: LoopEngine = self.globals.loop_engine
+        self.loop_engine.set_callbacks(self.on_sing, self.on_close_mouth)
         self.num_animals = 0  # starting number of animals
 
         self.animals = {}
@@ -74,14 +75,31 @@ class GardenScreen(Screen):
         # update background size when Window changes
         Window.bind(size=self.on_resize)
 
-
+    # ======================================================================
+    # Animal management
+    # ======================================================================
     def _derive_open_closed_paths(self, open_path: str):
         if open_path.endswith("open.png"):
             closed_path = open_path[:-len("open.png")] + "closed.png"
         return open_path, closed_path
+    
+    def on_sing(self, animal_id):
+        self._set_animal_face(animal_id, "open")
 
-    def _barn_anchor_pos_size(self):
-        return self.barn_button.pos, self.barn_button.size
+    def on_close_mouth(self, animal_id):
+        self._set_animal_face(animal_id, "closed")
+
+    def _set_animal_face(self, animal_id: str, face: str):
+        if animal_id is None:
+            return
+        w = self.animal_widgets.get(animal_id)
+        paths = self.animal_images.get(animal_id)
+        if not w or not paths:
+            return
+        target = paths.get(face)
+        if target and w.source != target:
+            w.source = target
+            w.reload()
     
     def add_or_update_animal(self, animal: Animal):
         self.animals[animal.animal_id] = animal
@@ -111,8 +129,26 @@ class GardenScreen(Screen):
 
             w.size = size
             w.pos = pos
-
-
+    
+    # ======================================================================
+    # audio scheduling
+    # ======================================================================
+    def on_key_down(self, keycode, modifiers):
+        if keycode[1] == "spacebar":
+            self.loop_engine.toggle_play(loop=True)
+            
+    def on_update(self):
+        self.loop_engine.on_update()
+        
+    def on_exit(self):
+        self.loop_engine.pause()
+        
+    # ======================================================================
+    # ui management
+    # ======================================================================    
+    def _barn_anchor_pos_size(self):
+        return self.barn_button.pos, self.barn_button.size
+    
     def build_scene(self):
         # kept for compatibility if other code calls it; background is built in __init__
         pass
@@ -131,39 +167,6 @@ class GardenScreen(Screen):
         self.barn_rect.size = new_size
         self.barn_button.pos = new_pos 
         self.barn_rect.pos = new_pos
-        
-    def sing(self):
-        print("animal is opening mouth")
-        self._set_animal_face(self.active_animal_id, "open")
-
-        
-    def close_mouth(self):
-        print("animal is closing mouth")
-        self._set_animal_face(self.active_animal_id, "closed")
     
     def on_barn_press(self, instance):
         self.switch_to('record')
-    
-    def on_key_down(self, keycode, modifiers):
-        if keycode[1] == "spacebar":
-            animal_ids = list(self.animals.keys())
-            if len(animal_ids) > 0:
-                animal_id = animal_ids[-1]
-                self.active_animal_id = animal_id 
-                self.loop_engine.play_loop(animal_id, self.sing, self.close_mouth)
-                
-
-    def _set_animal_face(self, animal_id: str, face: str):
-        if animal_id is None:
-            return
-        w = self.animal_widgets.get(animal_id)
-        paths = self.animal_images.get(animal_id)
-        if not w or not paths:
-            return
-        target = paths.get(face)
-        if target and w.source != target:
-            w.source = target
-            w.reload()
-            
-    def on_update(self):
-        self.loop_engine.on_update()

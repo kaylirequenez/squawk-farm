@@ -31,7 +31,7 @@ class RecordScreen(Screen):
         
         # duration
         # TODO: add button to select option (see get_recording_duration spec)
-        self.record_slots = self.loop_engine.get_recording_slots("measure")
+        self.record_slots = self.loop_engine.get_recording_slots("beat")
         self.record_duration = self.loop_engine.get_time_from_slots(self.record_slots)
         
         # audio capture
@@ -117,8 +117,8 @@ class RecordScreen(Screen):
             Color(0, 0.8, 0, 1)
             self.wave_line = Line(points=[0, Window.height/2, Window.width, Window.height/2], width=1.5)
         
-        # Re-add to bring to front
-        self.add_widget(self.record_btn)  
+        # Add buttons AFTER canvas setup to ensure they appear on top
+        self.add_widget(self.record_btn)
         self.add_widget(self.add_loop_btn)
         self.add_widget(self.sample_button)  
 
@@ -138,7 +138,7 @@ class RecordScreen(Screen):
         self.add_loop_btn.pos = (Window.width - 180, 20)
         self.sample_button.pos = (Window.width / 2 - 50, Window.height - 60)
         
-    def on_leave(self):
+    def on_exit(self):
         # reset markers
         self.left_marker_line = None
         self.right_marker_line = None
@@ -150,9 +150,13 @@ class RecordScreen(Screen):
         self.sample_button.disabled = True
         self.sample_button.opacity = 0
         
+        self.record_btn.text = "Record"
+        
         self.remove_widget(self.record_btn)
         self.remove_widget(self.add_loop_btn)
         self.remove_widget(self.sample_button)
+        
+        self.loop_engine.pause()
 
     # ------------------------------------------------------------------
     # UI Handlers
@@ -324,7 +328,7 @@ class RecordScreen(Screen):
         out_dir = get_animal_data_dir(self.animal_id)
         out_path = os.path.join(out_dir, "open.png")
         
-        offset, duration = self.loop_engine.get_loop_time_range(self.animal_id)
+        offset, duration = self.loop_engine.get_loop_offset(self.animal_id), self.loop_engine.get_loop_duration(self.animal_id)
 
         render_creature_image(wav_path, out_dir, size=(640, 480), offset=offset, duration=duration)
 

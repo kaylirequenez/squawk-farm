@@ -6,10 +6,12 @@ from imslib.audio import Audio
 from imslib.mixer import Mixer
 from imslib.wavegen import WaveGenerator
 from imslib.wavesrc import WaveBuffer, WaveFile
-from squawkfarm.models.loop import AnimalLoop, AnimalLoopSection, GlobalLoopSettings
+from squawkfarm.models.loop import AnimalLoop, GlobalLoopSettings
 
 from imslib.clock import AudioScheduler, SimpleTempoMap, kTicksPerQuarter
 from kivy.clock import Clock
+
+from squawkfarm.utils import frame_to_time, time_to_frame
 
 
 MAX_MEASURES = 4
@@ -32,147 +34,83 @@ COMMON_TIME_SIGNATURES = [
 ]
 
 # ---------------------------------------------------------------------------
-# Runtime section – what the engine actually plays/edits
-# sections can overlap other sections but cannot have the same start slot
-# ---------------------------------------------------------------------------
-class RuntimeLoopSection(object):
-    def __init__(self, local_start_frame: int, audio: WaveBuffer):
-        """
-        Runtime slice of the original audio.
-
-        - local_start_frame: frame index in the ORIGINAL file where this slice begins
-        - audio: WaveBuffer that already contains JUST this slice
-        """
-        super(RuntimeLoopSection, self).__init__()
-        self.local_start_frame = local_start_frame
-        self.audio = audio
-    
-    # -------- basic getters --------
-    def get_num_frames(self):
-        """Return number of frames in this slice (per original file)."""
-        return self.audio.get_num_frames()
-    
-    def get_local_end_frame(self):
-        """Return the end frame (per original file)."""
-        return self.local_start_frame + self.get_num_frames()
-    
-    def get_wave_generator(self, frame: int = 0) -> WaveGenerator:
-        """
-        Returns a WaveGenerator for the section starting at frame
-        """
-        gen = WaveGenerator(self.audio) 
-        gen.frame = frame 
-            
-        return gen
-    
-    # -------- editing --------
-    def set_audio(self, audio: WaveBuffer, new_start_frame: Optional[int] = None) -> None:
-        """Replace the underlying WaveBuffer (used when changing slice).""" 
-        self.audio = audio
-        if new_start_frame is not None:
-            self.local_start_frame = new_start_frame
-
-    def mute_region(self, start_frame: int, end_frame: int, mute: bool) -> None:
-        """ Mute/unmute from from start_frame to end_frame (per this section)."""
-        start_frame = max(0, start_frame)
-        end_frame = min(self.get_num_frames(), end_frame)
-
-        if mute:
-            self.audio.mute_frames(start_frame, end_frame)
-        else:
-            self.audio.unmute_frames(start_frame, end_frame)
-
-# ---------------------------------------------------------------------------
-# Per-animal loop: owns runtime sections, keyed by start_slot
+# Per-animal loop
 # ---------------------------------------------------------------------------
 class Loop(object):
     """
     Runtime per-animal loop.
-    Keeps sections in {start_slot: RuntimeLoopSection}.
     """
-    def __init__(self, audio_path: str, start_frame: Optional[int] = None, num_frames: Optional[int] = None, volume: Optional[float] = None, pitch_shift: Optional[float] = None, sections: List[AnimalLoopSection] = []):
+    def __init__(self, audio_path: str, start_frame: Optional[int] = None, num_frames: Optional[int] = None, audio_data: Optional[list[float]] = None, volume: Optional[float] = None, pitch_shift: Optional[float] = None, start_slots: List[int] = []):
         super(Loop, self).__init__()
-        self.update_recording(audio_path)
+        self.update_recording(audio_path, start_frame, num_frames, audio_data)
 
-        # default “recording region” chosen by user
-        self.default_start_frame = start_frame if start_frame is not None else 0
-        self.default_num_frames = num_frames if num_frames is not None else self.last_frame
+        self.start_slots = set(start_slots)
 
         self.volume = volume if volume is not None else 0.5
         self.pitch_shift = pitch_shift if pitch_shift is not None else 1
 
-        # {start_slot: RuntimeLoopSection}
-        self.sections: Dict[int, RuntimeLoopSection] = {}
-        for section in sections:
-            # model section is already in frames
-            start_frame = section.start_frame
-            num_frames = section.num_frames
-            buf = WaveBuffer(self.audio_path, start_frame, num_frames)
-            buf.data = section.audio_data
-            self.sections[section.start_slot] = RuntimeLoopSection(
-                start_frame,
-                buf,
-            )
-
     # ------------- queries -------------
-    def get_sections(self, frame_to_slot: Callable[[int], int]) -> Dict[int, int]:
-        """
-        Returns:
-            {start_slot: end_slot} for drawing the grid.
-        """
-        return {start_slot: frame_to_slot(section.get_num_frames()) + start_slot for start_slot, section in self.sections.items()}
+    def get_start_slots(self) -> List[int]:
+        """Return list of start slots for drawing the grid."""
+        return list(self.start_slots)
     
-    def get_loop_time_range(self) -> Tuple[int, int]:
-        """Return (start_frame, end_frame) in original file."""
-        return (self.default_start_frame / Audio.sample_rate, self.default_num_frames / Audio.sample_rate)
+    def get_frame_offset(self) -> int:
+        """Return the local start frame of this slice (per original file)."""
+        return self.local_start_frame
 
-    # ------------- default loop section -------------
-    def update_recording(self, audio_path: str) -> None:
+    def get_num_frames(self) -> int:
+        """Return number of frames in this slice (per original file)."""
+        return self.buffer.get_num_frames()
+
+    # ------------- loop slice -------------
+    def update_recording(self, audio_path: str, start_frame: Optional[int] = None, num_frames: Optional[int] = None, audio_data: Optional[list[float]] = None) -> None:
         """
         Change the audio file path of the recording.
         """
         self.audio_path = audio_path
         self.wf = WaveFile(audio_path)
         self.last_frame = self.wf.end  # total frames in the new file
-        self.default_start_frame = 0
-        self.default_num_frames = self.last_frame
+        
+        self.local_start_frame = start_frame if start_frame is not None else 0
+        self.buffer = WaveBuffer(audio_path, self.local_start_frame, num_frames or self.last_frame - self.local_start_frame)
+        
+        if audio_data:
+            self.buffer.data = audio_data
 
-    def get_default_section(self) -> WaveGenerator:
-        """Get WaveGenerator for this section starting at frame 0."""
-        buf = WaveBuffer(self.audio_path, self.default_start_frame, self.default_num_frames)
-        gen = WaveGenerator(buf)
-        return gen
+    def get_slice(self, frame_offset: Optional[int] = None, loop: bool = False) -> WaveGenerator:
+        """Get WaveGenerator for this loop."""
+        if frame_offset is not None:
+            self.buffer.frame = frame_offset
+        return WaveGenerator(self.buffer, loop)
     
     def set_left_margin(self, start_frame: int) -> None:
         """Update the default frame range of the recording."""
-        shift = start_frame - self.default_start_frame
-        self.default_start_frame += shift
-        self.default_num_frames -= shift
+        shift = start_frame - self.local_start_frame
+        self.local_start_frame += shift
+        num_frames = self.get_num_frames() - shift
+
+        self.buffer = WaveBuffer(self.audio_path, self.local_start_frame, num_frames)
 
     def set_right_margin(self, end_frame: int) -> None:
         """Update the default frame range of the recording."""
-        self.default_num_frames = end_frame - self.default_start_frame
-        
+        num_frames = end_frame - self.local_start_frame
+        self.buffer = WaveBuffer(self.audio_path, self.local_start_frame, num_frames)
+
     def shift(self, num_frames) -> None:
         """ 
         Shift the default frame range by num_frames, clamped to file bounds.
         """
-        new_start = self.default_start_frame + num_frames
-        new_end = new_start + self.default_num_frames
+        tot = self.get_num_frames()
+        new_start = self.local_start_frame + num_frames
+        new_end = new_start + tot
         
         # clamp to [0, last_frame]
         if new_start < 0:
-            new_end -= new_start  # shift right
             new_start = 0
-        if new_end > self.last_frame:
-            diff = new_end - self.last_frame
-            new_start -= diff
-            new_end = self.last_frame
-            if new_start < 0:
-                new_start = 0
+        elif new_end > self.last_frame:
+            new_start = self.last_frame - tot
 
-        self.default_start_frame = new_start
-        self.default_num_frames = new_end - new_start
+        self.buffer = WaveBuffer(self.audio_path, new_start, tot)
         
     def set_volume(self, volume: float) -> None:
         """Set per-animal volume."""
@@ -182,82 +120,35 @@ class Loop(object):
         """Set per-animal pitch shift in semitones."""
         self.pitch_shift = pitch_shift
         
-    # ------------- individual loop sections -------------
-    def add_section(self, start_slot: int) -> bool:
+    # ------------- individual loop instances -------------
+    def add_to_grid(self, start_slot: int) -> None:
         """
-        Adds a new loop section at start_slot using the default frame region.
+        Adds a new loop instance at start_slot.
+        """
+        self.start_slots.add(start_slot)
 
-        Returns:
-            True if added, False if a section already exists at that slot.
+    def del_from_grid(self, start_slot: int) -> None:
         """
-        if start_slot in self.sections:
-            return False
+        Removes the loop instance at start_slot.
+        """
+        if start_slot in self.start_slots:
+            self.start_slots.remove(start_slot)
 
-        audio = WaveBuffer(self.audio_path, self.default_start_frame, self.default_num_frames)
-        self.sections[start_slot] = RuntimeLoopSection(self.default_start_frame, audio)
-        return True
-
-    def toggle_mute(self, start_slot: int, slot_1: int, slot_2: int, slot_to_frame: Callable[[int], int], mute: bool) -> None:
+    def toggle_mute(self, frame_1: int, frame_2: int, mute: bool) -> None:
         """
-        Mute/unmute the section that starts at start_slot, between slot_1 and slot_2 on global loop grid.
+        Mute/unmute between frame_1 and frame_2 recording/trimming grid.
         """
-        section: RuntimeLoopSection = self.sections.get(start_slot)
-        
-        # ensure slot_1 <= slot_2
-        if slot_1 > slot_2:
-            slot_1, slot_2 = slot_2, slot_1
+        # ensure frame_1 <= frame_2
+        if frame_1 > frame_2:
+            frame_1, frame_2 = frame_2, frame_1
             
-        local_slot_1 = slot_1 - start_slot
-        local_slot_2 = slot_2 - start_slot
+        start_frame = max(0, start_frame)
+        end_frame = min(self.get_num_frames(), end_frame)
 
-        start_frame = slot_to_frame(local_slot_1)
-        end_frame = slot_to_frame(local_slot_2)
-
-        section.mute_region(start_frame, end_frame, mute)
-
-    def extend_start(self, old_start_slot: int, new_start_slot: int, slot_to_frame: Callable[[int], int]) -> None:
-        """Extend a section to the left (earlier in audio)."""
-        if not new_start_slot in self.sections:
-            section: RuntimeLoopSection = self.sections.get(old_start_slot)
-
-            frame_shift = slot_to_frame(old_start_slot - new_start_slot)
-            if frame_shift < section.local_start_frame:
-                new_start_frame = section.local_start_frame - frame_shift
-                new_num_frames = section.get_num_frames() + frame_shift
-                
-                section.set_audio(WaveBuffer(self.audio_path, new_start_frame, new_num_frames), new_start_frame)
-                
-                self.sections[new_start_slot] = self.sections.pop(old_start_slot)
-
-    def extend_end(self, start_slot: int, new_end_slot: int, slot_to_frame: Callable[[int], int]) -> None:
-        """Extend a section to the right (later in audio)."""
-        section: RuntimeLoopSection = self.sections.get(start_slot)
-
-        local_end_frame = section.get_local_end_frame()
-        frame_shift = slot_to_frame(new_end_slot) - local_end_frame
-        if local_end_frame + frame_shift <= self.last_frame:
-            section.set_audio(WaveBuffer(self.audio_path, section.local_start_frame, section.get_num_frames() + frame_shift))
-
-    def get_min_start_slot(self, start_slot: int, frame_to_slot: Callable[[int], int]) -> int:
-        """
-        How far left can this section go, in slots (based on how many frames we have BEFORE it).
-        """
-        section: RuntimeLoopSection = self.sections[start_slot]
-        slots_left = frame_to_slot(section.local_start_frame)
-        return start_slot - slots_left
-
-    def get_max_end_slot(self, start_slot: int, frame_to_slot: Callable[[int], int]) -> int:
-        """
-        How far right can this section go, in slots (based on how many frames we have AFTER it).
-        """
-        section: RuntimeLoopSection = self.sections[start_slot]
-
-        frames_right = self.last_frame - section.get_local_end_frame()
-        slots_right = frame_to_slot(frames_right)
-
-        # current length in slots
-        curr_len_slots = frame_to_slot(section.get_num_frames())
-        return start_slot + curr_len_slots + slots_right
+        if mute:
+            self.buffer.mute_frames(start_frame, end_frame)
+        else:
+            self.buffer.unmute_frames(start_frame, end_frame)
 
 class LoopEngine(object):
     """
@@ -279,8 +170,10 @@ class LoopEngine(object):
         self.audio = Audio(2)
         self.audio.set_generator(self.scheduler)
         
+        self.playing = False
+        
         # per-animal loops
-        self.loops = {id: Loop(loop.audio_path, loop.start_frame, loop.num_frames, loop.volume, loop.pitch_shift, loop.sections) for id, loop in animalLoops.items()}
+        self.loops = {id: Loop(loop.audio_path, loop.start_frame, loop.num_frames, loop.audio_data, loop.volume, loop.pitch_shift, loop.start_slots) for id, loop in animalLoops.items()}
         
         # TO DO
         # Review chosen slots to show & max number of measures w/ different time signatures.
@@ -348,11 +241,11 @@ class LoopEngine(object):
     
     def get_total_slots(self) -> int:
         return self.total_slots
-    
-    def get_sections(self, animal_id: str) -> Dict[int, int]:
-        """Returns {start_slot: end_slot} for this animal."""
-        return self.loops[animal_id].get_sections()
-    
+
+    def get_start_slots(self, animal_id: str) -> List[int]:
+        """Return list of start slots for drawing the grid."""
+        return self.loops[animal_id].get_start_slots()
+
     def get_time_from_slots(self, slots: float) -> float:
         """Returns total loop time in seconds."""
         total_ticks = self.slot_to_tick(slots)
@@ -384,8 +277,7 @@ class LoopEngine(object):
     # ======================================================================
     def get_recording_slots(self, unit: str) -> float:
         """
-        Get the recording duration in seconds based on the unit specified.
-        unit: "measure", "beat", or "sub_beat"
+        Get the number of slots for recording based on the unit.
         """
         if unit == "measure":
             return self.get_slots_per_measure()
@@ -422,19 +314,27 @@ class LoopEngine(object):
         loop = self.loops[animal_id]
         loop.set_right_margin(self.slot_to_frame(slot))
         
-    def shift_recording(self, animal_id: str, fraction_of_slot: float) -> None:
+    def shift_recording(self, animal_id: str, num_slots: float) -> None:
         """
-        Shift the *default* recording margins for this animal by a fraction of a slot.
+        Shift the *default* recording margins for this animal by num_slots.
         Call this when user clicks inside margins of recording, drags left or right, and releases.
 
         EXPECTS:
-          - fraction_of_slots in [-1, 1]
-          - Positive fraction = later in recording, negative = earlier.
+          - Positive num_slots = later in recording, negative = earlier.
         """
         loop = self.loops[animal_id]
-        shift_frames = self.slot_to_frame(fraction_of_slot)
+        shift_frames = self.slot_to_frame(num_slots)
         loop.shift(shift_frames)
         
+    def mute_slots(self, animal_id: str, slot_1: int, slot_2: int, mute: bool) -> None:
+        """
+        Mute/unmute between slot_1 and slot_2 of loop.
+        Call this when mute button has been clicked and user clicks on a slot ot drags over numerous and releases. 
+        """
+        loop = self.loops[animal_id]
+        frame_1, frame_2 = self.slot_to_frame(slot_1), self.slot_to_frame(slot_2)
+        loop.toggle_mute(frame_1, frame_2, mute)
+
     def set_volume_of_recording(self, animal_id: str, volume: float) -> None:
         """
         Set per-animal volume.
@@ -452,114 +352,83 @@ class LoopEngine(object):
         loop.set_pitch_shift(pitch_shift)
     
     # ======================================================================
-    # Call these when user is editing individual sections of the animal loop
-    # that they have added to the global loop grid
-    # Each expects slots in terms of number of slots in global loop
+    # Call these when user editing global loop grid
     # ======================================================================
-    def add_section(self, animal_id: str, start_slot: int) -> bool:
-        """
-        Add a new section for this animal at start_slot, using that animal's default frame region.
-        """
+    def add_loop_to_grid(self, animal_id: str, start_slot: int) -> None:
+        """Adds a new loop instance to the global grid at start_slot."""
         loop = self.loops[animal_id]
-        return loop.add_section(start_slot)
+        loop.add_to_grid(start_slot)
     
-    def del_section(self, animal_id: str, section_start: int) -> None:
-        """Deletes a loop section."""
+    def del_loop_from_grid(self, animal_id: str, start_slot: int) -> None:
+        """Deletes a loop instance from the global grid at start_slot."""
         loop = self.loops.get(animal_id)
-        del loop.sections[section_start]
-
-    # these are less relevant
-    def extend_start_of_section(self, animal_id: str, old_start_slot: int, new_start_slot: int) -> None:
-        """
-        Change where in the recording this section starts, changing which slot it starts at.
-        Call this when user drags left margin of individual section & releases.
-        
-        EXPECTS
-          - new_start_slot >= get_min_start_slot_of_section()
-        """
-        loop = self.loops[animal_id]
-        loop.extend_start(old_start_slot, new_start_slot, self.slot_to_frame)
-
-    def extend_end_of_section(self, animal_id: str, start_slot: int, new_end_slot: int) -> None:
-        """
-        Change where in the recording this section ends, changing which slot it ends at.
-        Call this when user drags right margin of individual section & releases.
-        
-        EXPECTS
-          - new_end_slot <= get_max_end_slot_of_section()
-        """
-        loop = self.loops[animal_id]
-        loop.extend_end(start_slot, new_end_slot, self.slot_to_frame)
-        
-    def get_min_start_slot_of_section(self, animal_id: str, start_slot: int) -> int:
-        """
-        How far left (in slots) can this audio section go for this animal?
-        Based on distance between start of recording and left margin.
-        """
-        loop = self.loops.get(animal_id)
-        min_start_slot = loop.get_min_start_slot(start_slot, self.frame_to_slot)
-
-        # can't extend beyond slot 0
-        return max(0, min_start_slot)
-
-    def get_max_end_slot_of_section(self, animal_id: str, start_slot: int) -> int:
-        """
-        How far right (in slots) can this audio section go for this animal?
-        Based on distance between end of recording and right margin.
-        """
-        loop = self.loops.get(animal_id)
-        max_end_slot = loop.get_max_end_slot(start_slot, self.frame_to_slot)
-        
-        # can't extend beyond last slot
-        return min(self.total_slots, max_end_slot)
-    
-    def mute_slots_of_section(self, animal_id: str, start_slot: int, slot_1: int, slot_2: int, mute: bool) -> None:
-        """
-        Mute/unmute the section of the animal loop that starts at start_slot, between slot_1 and slot_2.
-        Call this when mute button has been clicked and user clicks on a slot ot drags over numerous and releases. 
-        """
-        loop = self.loops[animal_id]
-        loop.toggle_mute(start_slot, slot_1, slot_2, self.slot_to_frame, mute)
+        loop.del_from_grid(start_slot)
         
     # ======================================================================
     # audio scheduling
-    # ======================================================================    
+    # ======================================================================  
+    def get_loop_offset(self, animal_id: str) -> float:
+        """Return the default loop offset time in seconds for this animal."""
+        return frame_to_time(self.loops.get(animal_id).get_frame_offset())
+    
+    def get_loop_duration(self, animal_id: str) -> float:
+        """Return the default loop duration time in seconds for this animal."""
+        return frame_to_time(self.loops.get(animal_id).get_num_frames())
+    
+    def set_callbacks(self, on_sing: Callable[[str], None], on_close: Callable[[str], None]) -> None: 
+        self._on_sing = on_sing
+        self._on_close = on_close
+        
     def on_update(self) -> None:
         self.audio.on_update()
-
-    def play(self, start_time: float, loop: bool) -> None:
-        """
-        Start audio playback of the current loops. 
-        If loop=True, will continuously loop.
-        start_time specifies the time offset into the loop to begin playback.
-        """
-        self._schedule_cycle(start_time, loop)
-
-    def pause(self) -> None:
-        """Stops audio playback immediately."""
-        self.scheduler.commands.clear()
-        self.mixer.generators.clear()
-    
+        
+    def toggle_play_loop(self, animal_id: str, start_time: float = 0, repeat: bool = False) -> None:
+        """Toggle playback of only the specified animal's default loop region."""
+        if self.playing:
+            self.pause()
+        else:
+            self.play_loop(animal_id, start_time, repeat)
+        
     # TODO: Add pausing as well & optional start time
-    def play_loop(self, animal_id: str, on_sing: Callable[[], None] = None, on_close: Callable[[], None] = None) -> None:
-        """Play only the specified animal's default loop region once."""
+    def play_loop(self, animal_id: str, offset: float = 0, repeat: bool = False) -> None:
+        """Play only the specified animal's default loop region once where offset is time in seconds into the loop to start playback."""
         loop = self.loops.get(animal_id)
-
-        gen = loop.get_default_section()
+        
+        gen = loop.get_slice(time_to_frame(offset), repeat)
         gen.set_gain(loop.volume)
         # TODO: apply pitch shift if/when implemented in WaveGenerator or a wrapper
         self.mixer.add(gen)
-        if on_sing:
-            on_sing()
-        if on_close:
-            _, duration = loop.get_loop_time_range()
-            Clock.schedule_once(lambda dt: on_close(), duration)
-
-    def get_loop_time_range(self, animal_id: str) -> Tuple[float, float]:
-        """Return (start_time, duration) in seconds for this animal's default loop region."""
-        return self.loops[animal_id].get_loop_time_range()
         
-    def _schedule_cycle(self, start_time: float, loop: bool) -> None:
+        self.playing = True
+        if not repeat:
+            end_time = self.get_loop_duration(animal_id) - offset + self.scheduler.get_time()
+            self.scheduler.post_at_tick(
+                        self.pause,
+                        self.tempo_map.time_to_tick(end_time)
+                    )
+        
+    def toggle_play(self, start_time: float = 0, loop: bool = False) -> None:
+        """Toggle audio playback of the current loops. 
+        If loop=True, will continuously loop.
+        start_time specifies the time offset into the loop to begin playback.
+        """
+        if self.playing:
+            self.pause()
+        else:
+            self.play(start_time, loop)
+
+    def play(self, start_time: float = 0, loop: bool = False) -> None:
+        """Start audio playback of the current loops."""
+        self.playing = True
+        self._schedule_cycle(start_time, loop)
+
+    def pause(self, tick: Optional[int] = None) -> None:
+        """Stops audio playback immediately."""
+        self.scheduler.commands.clear()
+        self.mixer.generators.clear()
+        self.playing = False
+        
+    def _schedule_cycle(self, start_time: float = 0, repeat: bool = False) -> None:
         """Schedule one full pass of the loop (all animals, all sections)."""
         now = self.scheduler.get_tick()
         loop_ticks = self.slot_to_tick(self.total_slots)
@@ -567,48 +436,55 @@ class LoopEngine(object):
         tick_offset = self.scheduler.tempo_map.time_to_tick(start_time) 
 
         for animal_id, loop in self.loops.items():
-            for section, start_slot in loop.sections.items():
-                local_frame_offset = None
+            for start_slot in loop.get_start_slots():
+                wave_generator = None
                 tick = self.slot_to_tick(start_slot) 
-                # schedule the start of this section
-                if tick < tick_offset:
-                    # section starts before start_time but ends after it, so start partway through
-                    end_frame = int(self.tempo_map.tick_to_time(tick) * Audio.sample_rate) + section.get_num_frames()
-                    frame_offset = int(self.tempo_map.tick_to_time(tick_offset) * Audio.sample_rate)
-                    if end_frame > frame_offset:
+                if tick >= tick_offset:
+                    wave_generator = loop.get_slice()
+                else:
+                    end_tick = tick + self.tempo_map.time_to_tick(loop.get_loop_duration(animal_id))
+                    if end_tick > tick_offset:
                         local_tick_offset = tick_offset - tick
+                        local_frame_offset = time_to_frame(self.tempo_map.tick_to_time(local_tick_offset))  
+                        wave_generator = loop.get_slice(local_frame_offset)
                         tick += local_tick_offset
-                        local_frame_offset = int(self.tempo_map.tick_to_time(local_tick_offset) * Audio.sample_rate)
                     
-                if tick >= tick_offset or local_frame_offset is not None:
+                if wave_generator is not None:
                     self.scheduler.post_at_tick(
                         self._start_section_playback,
                         tick + now,
-                        (local_frame_offset, animal_id, start_slot)
+                        (animal_id, start_slot, wave_generator)
                     )
-                    
-        if loop:
-            self.scheduler.post_at_tick(
-                self._schedule_cycle,
-                loop_ticks - tick_offset + now,
-                (0, loop),
-            )
         
-    def _start_section_playback(self, tick: int, local_frame_offset: Optional[int], animal_id: str, start_slot: int) -> None:
+        def callback(dt):
+            if repeat:
+                self._schedule_cycle(0, repeat)
+            else:
+                self.pause()
+        
+        self.scheduler.post_at_tick(
+                        callback,
+                        loop_ticks - tick_offset + now
+                    )
+
+    def _start_section_playback(self, _, args: Tuple[str, int, WaveGenerator]) -> None:
         """Starts playback of a section for a given animal at the current time."""
-        loop = self.loops.get(animal_id)
+        animal_id, start_slot, gen = args
+        loop: Loop = self.loops.get(animal_id)
         if not loop:
             return
-        section = loop.sections.get(start_slot)
-        if not section:
+        if not start_slot in loop.start_slots:
             return
-        
-        gen = section.get_wave_generator(local_frame_offset)
+
         # per-animal volume
         gen.set_gain(loop.volume)
         # TODO: pitch shift
         self.mixer.add(gen)
-            
+        
+        self._on_sing(animal_id)
+        duration = self.get_loop_duration(animal_id)
+        Clock.schedule_once(lambda dt: self._on_close(animal_id), duration)
+
     # ======================================================================
     # internal helpers
     # ======================================================================
