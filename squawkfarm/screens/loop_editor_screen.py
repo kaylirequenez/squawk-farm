@@ -16,6 +16,7 @@ from kivy.core.window import Window
 from kivy.graphics import Rectangle, Color, Line
 from kivy.uix.image import Image
 from kivy.uix.button import Button
+from kivy.uix.spinner import Spinner
 from kivy.clock import Clock
 from squawkfarm.utils import get_ui_asset_path, get_recording_wav_path, get_animal_data_dir, get_recordings_dir
 
@@ -50,6 +51,14 @@ class LoopEditorScreen(Screen):
         self.playback_thread = None
         self._play_event = None
         
+        # Sample size options with corresponding pulse/beat multipliers
+        self.sample_sizes = {
+            "Small": 1,    # 1 pulse/beat length
+            "Medium": 2,   # 2 pulse lengths  
+            "Large": 4     # 4 pulse lengths
+        }
+        self.current_sample_size = "Medium"  # Default selection
+        
         # Sample button
         self.sample_button = Button(
             text='Sample',
@@ -59,14 +68,27 @@ class LoopEditorScreen(Screen):
         )
         self.sample_button.bind(on_press=self._on_sample_press)
         self.add_widget(self.sample_button)
+        
+        # Sample size dropdown
+        self.sample_size_spinner = Spinner(
+            text=self.current_sample_size,
+            values=list(self.sample_sizes.keys()),
+            size_hint=(None, None),
+            size=(120, 50),
+            pos=(20, Window.height - 70),
+        )
+        self.sample_size_spinner.bind(text=self._on_sample_size_change)
+        self.add_widget(self.sample_size_spinner)
 
         # Bind resize
         Window.bind(size=self.on_resize)
 
-    def on_enter(self, animal_id: str, num_slots: int):
+    def on_enter(self, animal_id: str, num_slots: int, sample_size: str = "Medium"):
         # Draw UI each time we enter to reflect any new recordings
         self.animal_id = animal_id
         self.num_slots = num_slots
+        self.current_sample_size = sample_size
+        self.sample_size_spinner.text = sample_size
         self.wav = get_recording_wav_path(animal_id)
         self.waveform_points = self._load_waveform_points_from_file(self.wav)
         self._draw_board_and_waveform()
@@ -213,12 +235,20 @@ class LoopEditorScreen(Screen):
             
             # Draw left and right loop markers (red lines)
             Color(1, 0, 0, 1)  # Red for loop markers
+            
+            # Calculate sample size-aware marker positioning
+            sample_multiplier = self.sample_sizes[self.current_sample_size]
+            
+            # Set markers to span the appropriate sample size within the waveform
+            # Now we record 8x the window, so calculate fraction based on that
+            size_fraction = sample_multiplier / 8.0  # Since we now record 8x the window
             self.left_marker_x = margin
+            self.right_marker_x = margin + (draw_width * size_fraction)
+            
             self.left_marker_line = Line(
                 points=[self.left_marker_x, center_y - Window.height * 0.35, self.left_marker_x, center_y + Window.height * 0.35],
                 width=2.5
             )
-            self.right_marker_x = margin + draw_width
             self.right_marker_line = Line(
                 points=[self.right_marker_x, center_y - Window.height * 0.35, self.right_marker_x, center_y + Window.height * 0.35],
                 width=2.5
@@ -413,6 +443,12 @@ class LoopEditorScreen(Screen):
         except Exception as e:
             print(f"Error starting engine playback via LoopEngine.play_loop: {e}")
 
+    def _on_sample_size_change(self, spinner, text):
+        """Handle sample size dropdown selection change."""
+        self.current_sample_size = text
+        # Redraw the waveform with new marker positioning
+        self._draw_board_and_waveform()
+
     def _audio_playback_tick(self, dt):
         """Clock callback that pumps the Audio object until the generator finishes."""
         try:
@@ -459,13 +495,18 @@ class LoopEditorScreen(Screen):
             margin = Window.width / 15
             draw_width = Window.width - 2 * margin
             
-            # Update marker position
+            # Calculate maximum range based on sample size
+            sample_multiplier = self.sample_sizes[self.current_sample_size]
+            size_fraction = sample_multiplier / 8.0  # Since we now record 8x the window
+            max_right_x = margin + (draw_width * size_fraction)
+            
+            # Update marker position with sample size constraints
             if self.dragging_marker == 'left':
                 # Keep left marker within bounds
                 self.left_marker_x = max(margin, min(touch.x, self.right_marker_x - 10))
             elif self.dragging_marker == 'right':
-                # Keep right marker within bounds
-                self.right_marker_x = max(self.left_marker_x + 10, min(touch.x, margin + draw_width))
+                # Keep right marker within sample size bounds
+                self.right_marker_x = max(self.left_marker_x + 10, min(touch.x, max_right_x))
             
             # Redraw markers
             self._update_marker_lines()
@@ -500,6 +541,14 @@ class LoopEditorScreen(Screen):
         # Update sample button position
         if self.sample_button:
             self.sample_button.pos = (Window.width / 2 - 50, Window.height - 60)
+            
+        # Update sample size spinner position  
+        if hasattr(self, 'sample_size_spinner') and self.sample_size_spinner:
+            self.sample_size_spinner.pos = (20, Window.height - 70)
+            
+        # Update sample size spinner position  
+        if self.sample_size_spinner:
+            self.sample_size_spinner.pos = (20, Window.height - 70)
         
         # Update sizes/positions of canvas elements when window resizes
         if self.wood_rect:
