@@ -4,6 +4,7 @@ import numpy as np
 import soundfile as sf
 
 from kivy.uix.button import Button
+from kivy.uix.spinner import Spinner
 from kivy.core.window import Window
 from kivy.graphics import Color, Line
 from kivy.clock import Clock
@@ -30,9 +31,16 @@ class RecordScreen(Screen):
         super(RecordScreen, self).__init__(**kwargs)
         self.loop_engine: LoopEngine = Screen.globals.loop_engine
 
-        self.window_slots = self.loop_engine.get_recording_slots("beat")
-        self.record_slots = self.window_slots * 4
-        self.record_duration = self.loop_engine.get_time_from_slots(self.record_slots)
+        # Sample size options with corresponding pulse/beat multipliers
+        self.sample_sizes = {
+            "Small": 1,    # 1 pulse/beat length
+            "Medium": 2,   # 2 pulse lengths  
+            "Large": 4     # 4 pulse lengths
+        }
+        self.current_sample_size = "Medium"  # Default selection
+        
+        # Calculate initial durations
+        self._update_durations_for_sample_size()
 
         self.writer = AudioWriter(get_recordings_dir(), num_channels=1)
 
@@ -42,7 +50,8 @@ class RecordScreen(Screen):
 
         self.mic = Audio(num_channels=1, input_func=listen_func, num_input_channels=1)
 
-        self.viz_scale = Window.height * 0.22
+        # Increase visualization scale so waveform appears larger
+        self.viz_scale = Window.height * 0.5
 
         self.record_btn = Button(
             text="Record",
@@ -53,9 +62,9 @@ class RecordScreen(Screen):
         self.record_btn.bind(on_release=self._on_record_press)
 
         self.add_loop_btn = Button(
-            text="Add to Loop",
+            text="Add to Garden",
             size_hint=(None, None),
-            size=(160, 64),
+            size=(200, 64),
             pos=(Window.width - 180, 20),
             disabled=True,
             opacity=0,
@@ -63,14 +72,35 @@ class RecordScreen(Screen):
         self.add_loop_btn.bind(on_release=self._add_animal)
 
         self.sample_button = Button(
-            text="Sample",
+            text="Hear Sample",
             size_hint=(None, None),
-            size=(100, 50),
+            size=(150, 50),
             pos=(Window.width / 2 - 50, Window.height - 60),
             disabled=True,
             opacity=0,
         )
         self.sample_button.bind(on_press=self._on_sample_press)
+        
+        # Edit button to go to loop editor
+        self.edit_button = Button(
+            text="Edit Loop",
+            size_hint=(None, None),
+            size=(140, 50),
+            pos=(Window.width / 2 + 120, Window.height - 60),
+            disabled=True,
+            opacity=0,
+        )
+        self.edit_button.bind(on_press=self._on_edit_press)
+        
+        # Sample size dropdown
+        self.sample_size_spinner = Spinner(
+            text=self.current_sample_size,
+            values=list(self.sample_sizes.keys()),
+            size_hint=(None, None),
+            size=(120, 50),
+            pos=(20, Window.height - 70),
+        )
+        self.sample_size_spinner.bind(text=self._on_sample_size_change)
 
         self.max_samples = int(self.record_duration * self.TARGET_PTS_PER_SEC)
         self.samples = []
@@ -78,6 +108,18 @@ class RecordScreen(Screen):
 
         self.is_recording = False
         self.animal_id = ""
+        
+    def _update_durations_for_sample_size(self):
+        """Update recording durations based on current sample size selection."""
+        pulse_length = self.loop_engine.get_recording_slots("beat")
+        multiplier = self.sample_sizes[self.current_sample_size]
+        
+        self.window_slots = pulse_length * multiplier
+        self.record_slots = self.window_slots * 4  # Record 4x the window for editing
+        self.record_duration = self.loop_engine.get_time_from_slots(self.record_slots)
+        
+        # Update max samples for waveform visualization
+        self.max_samples = int(self.record_duration * self.TARGET_PTS_PER_SEC)
 
         self.left_marker_line = None
         self.right_marker_line = None
@@ -92,16 +134,22 @@ class RecordScreen(Screen):
         self.add_loop_btn.opacity = 1 if visible else 0
         self.sample_button.disabled = not visible
         self.sample_button.opacity = 1 if visible else 0
+        self.edit_button.disabled = not visible
+        self.edit_button.opacity = 1 if visible else 0
 
     def _add_button_widgets(self):
         self.add_widget(self.record_btn)
         self.add_widget(self.add_loop_btn)
         self.add_widget(self.sample_button)
+        self.add_widget(self.edit_button)
+        self.add_widget(self.sample_size_spinner)
 
     def _remove_button_widgets(self):
         self.remove_widget(self.record_btn)
         self.remove_widget(self.add_loop_btn)
         self.remove_widget(self.sample_button)
+        self.remove_widget(self.edit_button)
+        self.remove_widget(self.sample_size_spinner)
 
     def _clear_marker_lines(self):
         if self.left_marker_line is not None:
@@ -157,9 +205,12 @@ class RecordScreen(Screen):
         if hasattr(self, "grid"):
             self.grid.on_resize(winsize)
 
-        self.viz_scale = Window.height * 0.22
+        # Keep waveform scale proportional to window height
+        self.viz_scale = Window.height * 0.5
         self.add_loop_btn.pos = (Window.width - 180, 20)
         self.sample_button.pos = (Window.width / 2 - 50, Window.height - 60)
+        self.edit_button.pos = (Window.width / 2 + 120, Window.height - 60)
+        self.sample_size_spinner.pos = (20, Window.height - 70)
 
     def on_exit(self):
         self._clear_marker_lines()
@@ -177,6 +228,33 @@ class RecordScreen(Screen):
 
     def _on_sample_press(self, *_):
         self.loop_engine.play_loop(self.animal_id)
+        
+    def _on_edit_press(self, *_):
+        """Navigate to loop editor with current animal and sample size."""
+        if hasattr(self, 'animal_id') and self.animal_id:
+            self.switch_to("loop", self.animal_id, self.record_slots, self.current_sample_size)
+        
+    def _on_sample_size_change(self, spinner, text):
+        """Handle sample size dropdown selection change."""
+        if self.is_recording:
+            return  # Don't change size during recording
+            
+        self.current_sample_size = text
+        self._update_durations_for_sample_size()
+        
+        # Clear any existing samples and reset UI
+        self.samples.clear()
+        self._clear_marker_lines()
+        self._set_editing_buttons_visible(False)
+        
+        # Update grid if it exists
+        if hasattr(self, 'grid'):
+            self.canvas.before.remove(self.grid)
+            self.grid = LoopGrid(
+                loop_engine=self.loop_engine,
+                num_slots=self.record_slots,
+            )
+            self.canvas.before.add(self.grid)
 
     def _start_recording(self):
         self.samples.clear()

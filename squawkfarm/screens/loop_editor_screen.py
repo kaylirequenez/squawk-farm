@@ -31,7 +31,8 @@ class LoopEditorScreen(Screen):
         self.trash_button = None
         self.trash_rect = None
         self.waveform_points = []
-        self.viz_scale = Window.height * 0.2
+    # Increase visualization scale so waveform appears larger on screen
+        self.viz_scale = Window.height * 0.5
         
         # Draggable markers for loop start and end
         self.left_marker_x = 0  # Will be set to margin in draw function
@@ -49,6 +50,8 @@ class LoopEditorScreen(Screen):
         self.audio = Audio(num_channels=1)
         self.playback_thread = None
         self._play_event = None
+        # selected recording path (set externally to preview a specific animal)
+        self.selected_recording = None
         
         # Sample button
         self.sample_button = Button(
@@ -62,11 +65,21 @@ class LoopEditorScreen(Screen):
 
         # Bind resize
         Window.bind(size=self.on_resize)
+        
+    def _get_sample_size_multiplier(self, sample_size: str) -> int:
+        """Get pulse/beat multiplier for the given sample size."""
+        size_multipliers = {
+            "Small": 1,   # 1 pulse/beat length
+            "Medium": 2,  # 2 pulse lengths  
+            "Large": 4    # 4 pulse lengths
+        }
+        return size_multipliers.get(sample_size, 2)  # Default to Medium
 
-    def on_enter(self, animal_id: str, num_slots: int):
+    def on_enter(self, animal_id: str, num_slots: int, sample_size: str = "Medium"):
         # Draw UI each time we enter to reflect any new recordings
         self.animal_id = animal_id
         self.num_slots = num_slots
+        self.sample_size = sample_size  # Store sample size for marker calculations
         self.wav = get_recording_wav_path(animal_id)
         self.waveform_points = self._load_waveform_points_from_file(self.wav)
         self._draw_board_and_waveform()
@@ -150,7 +163,11 @@ class LoopEditorScreen(Screen):
         self.right_marker_line = None
 
         # draw wood board in canvas.before so it's behind widgets
-        woodB_path = get_ui_asset_path("woodB2.png")
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        woodB_path = os.path.join(base_dir, "assets", "ui_images", "woodB.png")
+        if not os.path.isfile(woodB_path):
+            # fallback to relative path used elsewhere
+            woodB_path = os.path.join(os.path.dirname(__file__), "../../assets/ui_images/woodB.png")
         wood_tex = Image(source=woodB_path).texture if os.path.exists(woodB_path) else None
         with self.canvas.before:
             Color(1, 1, 1, 1)
@@ -183,6 +200,14 @@ class LoopEditorScreen(Screen):
         self.barn_button.bind(on_press=self.on_barn_press)
         self.add_widget(self.barn_button)
 
+                # Draw waveform in canvas so it's visible centered on screen
+        # Load selected recording if provided, otherwise the latest file
+        target = self.selected_recording if getattr(self, 'selected_recording', None) else self._find_latest_recording()
+        if target:
+            self.waveform_points = self._load_waveform_points_from_file(target)
+        else:
+            self.waveform_points = []
+
         # compute points across central 13/15ths of screen
         width = Window.width
         margin = width / 15
@@ -213,12 +238,23 @@ class LoopEditorScreen(Screen):
             
             # Draw left and right loop markers (red lines)
             Color(1, 0, 0, 1)  # Red for loop markers
-            self.left_marker_x = margin
+            
+            # Calculate sample size-aware marker positioning
+            sample_multiplier = self._get_sample_size_multiplier(getattr(self, 'sample_size', 'Medium'))
+            
+            # If this is a new audio, reset markers based on sample size; otherwise preserve positions
+            if not hasattr(self, '_last_recording_path') or self._last_recording_path != target:
+                # Set markers to span the appropriate sample size within the waveform
+                # For Small: use first 1/4 of waveform, Medium: first 1/2, Large: full span
+                size_fraction = sample_multiplier / 4.0  # Since we recorded 4x the window
+                self.left_marker_x = margin
+                self.right_marker_x = margin + (draw_width * size_fraction)
+            # else: keep previous marker positions
+            self._last_recording_path = target
             self.left_marker_line = Line(
                 points=[self.left_marker_x, center_y - Window.height * 0.35, self.left_marker_x, center_y + Window.height * 0.35],
                 width=2.5
             )
-            self.right_marker_x = margin + draw_width
             self.right_marker_line = Line(
                 points=[self.right_marker_x, center_y - Window.height * 0.35, self.right_marker_x, center_y + Window.height * 0.35],
                 width=2.5
@@ -459,13 +495,18 @@ class LoopEditorScreen(Screen):
             margin = Window.width / 15
             draw_width = Window.width - 2 * margin
             
-            # Update marker position
+            # Calculate maximum range based on sample size
+            sample_multiplier = self._get_sample_size_multiplier(getattr(self, 'sample_size', 'Medium'))
+            size_fraction = sample_multiplier / 4.0  # Since we recorded 4x the window
+            max_right_x = margin + (draw_width * size_fraction)
+            
+            # Update marker position with sample size constraints
             if self.dragging_marker == 'left':
                 # Keep left marker within bounds
                 self.left_marker_x = max(margin, min(touch.x, self.right_marker_x - 10))
             elif self.dragging_marker == 'right':
-                # Keep right marker within bounds
-                self.right_marker_x = max(self.left_marker_x + 10, min(touch.x, margin + draw_width))
+                # Keep right marker within sample size bounds
+                self.right_marker_x = max(self.left_marker_x + 10, min(touch.x, max_right_x))
             
             # Redraw markers
             self._update_marker_lines()
@@ -519,6 +560,8 @@ class LoopEditorScreen(Screen):
         if self.trash_rect:
             self.trash_rect.pos = self.trash_button.pos
             self.trash_rect.size = self.trash_button.size
+        # Recompute viz_scale when window resizes so visualization keeps relative size
+        self.viz_scale = Window.height * 0.5
         
         # Redraw waveform and markers on resize
         if self.waveform_points:

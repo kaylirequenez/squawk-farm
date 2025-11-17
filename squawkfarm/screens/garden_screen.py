@@ -49,6 +49,13 @@ class GardenScreen(Screen):
         self.sun = Image(source=self.sun_path, keep_data=True).texture
         self.sun_const = 9
         self.s_size = Window.height / self.sun_const
+        # Sun resize scale factors for 4-beat cycle (large, small, medium, medium-large)
+        self.sun_scale_cycle = [1.3, 0.8, 1.0, 1.15]
+        self.sun_scale_index = 0  # Track which size we're on in the cycle
+        self.sun_scheduled_callback = None  # Track scheduled sun callback
+        
+        # Schedule sun updates on every beat
+        self._schedule_next_sun_update()
 
         self.barn = Image(source=self.barn_path).texture
         self.b_size = Window.width / 8
@@ -84,32 +91,46 @@ class GardenScreen(Screen):
         Clock.schedule_interval(self._update_animals, 1.0 / 30.0)
 
     def add_or_update_animal(self, animal: Animal):
-        self.animals[animal.animal_id] = animal
-        widget = self.animal_widgets.get(animal.animal_id)
+        try:
+            self.animals[animal.animal_id] = animal
+            widget = self.animal_widgets.get(animal.animal_id)
 
-        if widget is None:
-            widget = AnimalWidget(animal)
+            if widget is None:
+                widget = AnimalWidget(animal)
 
-            width, height = Window.size
-            margin = 10
-            max_x = max(margin, width - widget.width - margin)
-            max_y = max(margin, height - widget.height - margin)
+                width, height = Window.size
+                margin = 10
+                max_x = max(margin, width - widget.width - margin)
+                max_y = max(margin, height - widget.height - margin)
 
-            x = random.uniform(margin, max_x)
-            y = random.uniform(margin, max_y)
-            widget.pos = (x, y)
+                x = random.uniform(margin, max_x)
+                y = random.uniform(margin, max_y)
+                widget.pos = (x, y)
 
-            self.animal_widgets[animal.animal_id] = widget
-            self.add_widget(widget)
-        else:
-            widget.update_from_animal(animal)
+                self.animal_widgets[animal.animal_id] = widget
+                self.add_widget(widget)
+            else:
+                widget.update_from_animal(animal)
 
-        if getattr(animal, "recording_path", None):
-            build_arpeggiated_loop_for_animal(
-                self.loop_engine,
-                animal.animal_id,
-                animal.recording_path,
-            )
+            if getattr(animal, "recording_path", None):
+                try:
+                    build_arpeggiated_loop_for_animal(
+                        self.loop_engine,
+                        animal.animal_id,
+                        animal.recording_path,
+                    )
+                except Exception as e:
+                    print(f"Warning: Failed to build arpeggio for animal {animal.animal_id}: {e}")
+                    # Fallback: just add the original recording
+                    try:
+                        self.loop_engine.add_or_update_animal_loop(animal.animal_id, animal.recording_path)
+                        self.loop_engine.add_loop_to_grid(animal.animal_id, [0])
+                    except Exception as e2:
+                        print(f"Error: Failed to add original recording: {e2}")
+                        
+        except Exception as e:
+            print(f"Error adding/updating animal {getattr(animal, 'animal_id', 'unknown')}: {e}")
+            # Don't re-raise to prevent app crash
 
     def on_sing(self, animal_id: str):
         widget = self.animal_widgets.get(animal_id)
@@ -141,8 +162,30 @@ class GardenScreen(Screen):
 
     def on_update(self):
         self.loop_engine.on_update()
+        
+        # Update sun size based on current position in cycle
+        scale = self.sun_scale_cycle[self.sun_scale_index]
+        new_sun_size = (self.s_size * scale, self.s_size * scale)
+        # Center sun vertically while keeping x position
+        center_offset_y = (self.s_size * scale - self.s_size) / 2
+        self.sun_rect.size = new_sun_size
+        self.sun_rect.pos = (0, Window.height - self.s_size - center_offset_y)
+
+    def on_enter(self, *args):
+        """Called when this screen becomes active. Ensure sun beat updates are scheduled.
+
+        The audio scheduler may have been paused (and its pending commands cleared)
+        while on other screens (for example, the record screen calls
+        `loop_engine.pause()` on exit). Reschedule the sun beat callback so the
+        sun animation continues after returning to the garden.
+        """
+        # Only reschedule if we don't already have a callback scheduled
+        if self.sun_scheduled_callback is None:
+            self._schedule_next_sun_update()
 
     def on_exit(self):
+        # Clear any pending sun callback when leaving the screen
+        self.sun_scheduled_callback = None
         self.loop_engine.pause()
 
     def _update_animals(self, dt):
@@ -152,6 +195,38 @@ class GardenScreen(Screen):
 
     def _barn_anchor_pos_size(self):
         return self.barn_button.pos, self.barn_button.size
+
+    def _schedule_next_sun_update(self):
+        """Schedule the next sun size update on the next beat."""
+        # Don't schedule if we already have a pending callback
+        if self.sun_scheduled_callback is not None:
+            return
+            
+        try:
+            from imslib.clock import kTicksPerQuarter
+            # Get the next beat tick
+            current_tick = self.loop_engine.scheduler.get_tick()
+            next_beat_tick = ((current_tick // kTicksPerQuarter) + 1) * kTicksPerQuarter
+            # Schedule callback and store reference
+            self.sun_scheduled_callback = self.loop_engine.scheduler.post_at_tick(
+                self._on_beat_tick,
+                next_beat_tick
+            )
+        except Exception as e:
+            # If scheduling fails, reset the callback reference
+            print(f"Warning: Failed to schedule sun update: {e}")
+            self.sun_scheduled_callback = None
+
+    def _on_beat_tick(self, tick):
+        """Called on every beat; advance sun size in cycle."""
+        # Clear the callback reference since this one has fired
+        self.sun_scheduled_callback = None
+        
+        # Update sun scale
+        self.sun_scale_index = (self.sun_scale_index + 1) % len(self.sun_scale_cycle)
+        
+        # Schedule the next beat update
+        self._schedule_next_sun_update()
 
     def build_scene(self):
         pass

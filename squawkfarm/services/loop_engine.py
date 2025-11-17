@@ -259,10 +259,13 @@ class LoopEngine(object):
         Adds or updates an animal loop.
         Call this as soon as user records audio.
         """
-        if animal_id in self.loops:
-            self.loops[animal_id].update_recording(audio_path)
-        else:
-            self.loops[animal_id] = Loop(audio_path)
+        try:
+            if animal_id in self.loops:
+                self.loops[animal_id].update_recording(audio_path)
+            else:
+                self.loops[animal_id] = Loop(audio_path)
+        except Exception as e:
+            print(f"Error adding/updating animal loop for {animal_id}: {e}")
 
     def del_animal_loop(self, animal_id: str) -> None:
         """
@@ -347,9 +350,14 @@ class LoopEngine(object):
     # ======================================================================
     def add_loop_to_grid(self, animal_id: str, slots: list[int]) -> None:
         """Adds loop instances at the specified slots."""
-        loop = self.loops[animal_id]
-        for start_slot in slots:
-            loop.add_to_grid(start_slot)
+        try:
+            loop = self.loops[animal_id]
+            for start_slot in slots:
+                loop.add_to_grid(start_slot)
+        except KeyError:
+            print(f"Warning: Animal {animal_id} not found in loops when adding to grid")
+        except Exception as e:
+            print(f"Error adding loop to grid for animal {animal_id}: {e}")
     
     def del_loop_from_grid(self, animal_id: str, slots: list[int]) -> None:
         """Deletes loop instances from the global grid at the specified slots."""
@@ -362,11 +370,19 @@ class LoopEngine(object):
     # ======================================================================  
     def get_loop_offset(self, animal_id: str) -> float:
         """Return the default loop offset time in seconds for this animal."""
-        return frame_to_time(self.loops.get(animal_id).get_frame_offset())
+        try:
+            return frame_to_time(self.loops.get(animal_id).get_frame_offset())
+        except (KeyError, AttributeError):
+            print(f"Warning: Could not get loop offset for animal {animal_id}, returning 0")
+            return 0.0
     
     def get_loop_duration(self, animal_id: str) -> float:
         """Return the default loop duration time in seconds for this animal."""
-        return frame_to_time(self.loops.get(animal_id).get_num_frames())
+        try:
+            return frame_to_time(self.loops.get(animal_id).get_num_frames())
+        except (KeyError, AttributeError):
+            print(f"Warning: Could not get loop duration for animal {animal_id}, returning 0")
+            return 0.0
     
     def set_callbacks(self, on_sing: Callable[[str], None], on_close: Callable[[str], None]) -> None: 
         self._on_sing = on_sing
