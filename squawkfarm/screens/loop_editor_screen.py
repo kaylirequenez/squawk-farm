@@ -67,7 +67,7 @@ class LoopEditorScreen(Screen):
         # Draw UI each time we enter to reflect any new recordings
         self.animal_id = animal_id
         self.num_slots = num_slots
-        self.wav = get_recording_wav_path(animal_id)
+        self.wav = get_recording_wav_path(animal_id, "raw")
         self.waveform_points = self._load_waveform_points_from_file(self.wav)
         self._draw_board_and_waveform()
 

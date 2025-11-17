@@ -20,7 +20,7 @@ from kivy.clock import Clock
 from collections import deque
 
 from squawkfarm.services.loop_engine import LoopEngine
-from squawkfarm.services.arpeggio_processor import build_arpeggiated_loop_for_animal
+# from squawkfarm.services.arpeggio_processor import build_arpeggiated_loop_for_animal
 from ..models.animal import Animal
 from squawkfarm.widgets.animal_widget import AnimalWidget
 from squawkfarm.widgets.sun_widget import SunWidget
@@ -95,13 +95,8 @@ class GardenScreen(Screen):
             self.add_widget(widget)
         else:
             widget.update_from_animal(animal)
-
-        if getattr(animal, "recording_path", None):
-            build_arpeggiated_loop_for_animal(
-                self.loop_engine,
-                animal.animal_id,
-                animal.recording_path,
-            )
+            
+        self.loop_engine.add_loop_to_grid(animal.animal_id, 0)
 
     def on_sing(self, animal_id: str):
         widget = self.animal_widgets.get(animal_id)
@@ -114,22 +109,8 @@ class GardenScreen(Screen):
             widget.close_mouth()
 
     def on_key_down(self, keycode, modifiers):
-        if keycode[1] != "spacebar":
-            return
-
-        animal_ids = list(self.animals.keys())
-        if not animal_ids:
-            return
-
-        animal_id = animal_ids[-1]
-        self.active_animal_id = animal_id
-
-        widget = self.animal_widgets.get(animal_id)
-        if widget is None:
-            return
-
-        widget.speak_once()
-        self.loop_engine.toggle_play(loop=True)
+        if keycode[1] == "spacebar":
+            self.loop_engine.toggle_play(loop=True)
 
     def on_update(self):
         self.loop_engine.on_update()

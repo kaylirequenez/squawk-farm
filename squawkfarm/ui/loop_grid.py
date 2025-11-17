@@ -17,8 +17,6 @@ class LoopGrid(InstructionGroup):
         super(LoopGrid, self).__init__()
         self.loop_engine = loop_engine
         self.total_slots = loop_engine.get_total_slots() if num_slots is None else num_slots
-        print(self.total_slots)
-        print(self.loop_engine.get_total_slots())
         
         self.x = x
         self.y = y
@@ -31,7 +29,6 @@ class LoopGrid(InstructionGroup):
         self.marker_styles = {
             "measure": ((0.10, 0.10, 0.10, 1.0), 3.0, 1.00),  # color, width, height_ratio
             "beat":    ((0.30, 0.30, 0.30, 0.9), 2.0, 0.80), 
-            "sub":     ((0.50, 0.50, 0.50, 0.7), 1.2, 0.55),
             "pulse":   ((0.70, 0.70, 0.70, 0.4), 0.8, 0.35),
         }
         
@@ -43,7 +40,6 @@ class LoopGrid(InstructionGroup):
         self.add(self._bg_rect)
     
     def _draw_grid(self) -> None:
-        slots_per_sub   = self.loop_engine.get_slots_per_sub_beat()
         slots_per_beat  = self.loop_engine.get_slots_per_beat()
         slots_per_meas  = self.loop_engine.get_slots_per_measure()
         slot_w = self.width / self.total_slots
@@ -54,8 +50,6 @@ class LoopGrid(InstructionGroup):
                 tier = "measure"
             elif slot % slots_per_beat == 0:
                 tier = "beat"
-            elif slot % slots_per_sub == 0:
-                tier = "sub"
             else:
                 tier = "pulse"
 

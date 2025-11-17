@@ -17,14 +17,27 @@ def get_recordings_dir() -> str:
     """
     return os.path.join(_get_base_dir(), "data", "recordings")
 
-def get_recording_wav_path(animal_id: str) -> str:
+def get_animal_recording_dir(animal_id: str) -> str:
     """
-    Get the absolute path to the .wav file for a given animal_id.
+    Return the path to data/recordings/<animal_id>/.
+    Creates the directory if it doesn't exist.
     """
-    return os.path.join(get_recordings_dir(), animal_id + ".wav")
+    path = os.path.join(get_recordings_dir(), animal_id)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+def get_recording_wav_path(animal_id: str, recording_type: str) -> str:
+    """
+    Get the absolute path to the .wav file for a given animal_id and recording type.
+    Recording type can be "raw" or "tuned".
+    """
+    return os.path.join(get_animal_recording_dir(animal_id), recording_type + ".wav")
 
 def get_animal_data_dir(animal_id: str) -> str:
     """
     Return the path to data/animals/<animal_id>.
+    Creates the directory if it doesn't exist.
     """
-    return os.path.join(_get_base_dir(), "data", "animals", animal_id)
+    path = os.path.join(_get_base_dir(), "data", "animals", animal_id)
+    os.makedirs(path, exist_ok=True)
+    return path

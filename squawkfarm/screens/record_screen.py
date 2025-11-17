@@ -20,8 +20,8 @@ from squawkfarm.models.animal import Animal
 from squawkfarm.utils import (
     get_recording_wav_path,
     get_animal_data_dir,
-    get_recordings_dir,
 )
+from squawkfarm.utils import get_animal_recording_dir
 
 
 class RecordScreen(Screen):
@@ -31,11 +31,9 @@ class RecordScreen(Screen):
         super(RecordScreen, self).__init__(**kwargs)
         self.loop_engine: LoopEngine = Screen.globals.loop_engine
 
-        self.window_slots = self.loop_engine.get_recording_slots("beat")
+        self.window_slots = self.loop_engine.get_recording_slots(1)
         self.record_slots = self.window_slots * 8
         self.record_duration = self.loop_engine.get_time_from_slots(self.record_slots)
-
-        self.writer = AudioWriter(get_recordings_dir(), num_channels=1)
 
         def listen_func(data, num_channels):
             self.writer.add_audio(data, num_channels)
@@ -151,7 +149,8 @@ class RecordScreen(Screen):
 
     def on_enter(self, *_):
         self.animal_id = str(uuid.uuid4())
-        self._clear_marker_lines()
+        self.writer = AudioWriter(get_animal_recording_dir(self.animal_id), num_channels=1)
+        # self._clear_marker_lines()
 
         self.canvas.before.clear()
         self.canvas.clear()
@@ -202,7 +201,7 @@ class RecordScreen(Screen):
             self._start_recording()
 
     def _on_sample_press(self, *_):
-        self.loop_engine.play_loop(self.animal_id)
+        self.loop_engine.play_recording()
         
     def _on_sample_size_change(self, spinner, text):
         """Handle sample size dropdown selection change."""
@@ -226,15 +225,11 @@ class RecordScreen(Screen):
         self.is_recording = False
         self.record_btn.text = "Re-record"
 
-        self.writer.stop(self.animal_id)
+        self.writer.stop("raw")
 
-        self._add_loop()
+        self.loop_engine.set_recording(self.animal_id)
         self._draw_margin_markers()
         self._set_editing_buttons_visible(True)
-
-    def _add_loop(self):
-        wav_path = get_recording_wav_path(self.animal_id)
-        self.loop_engine.add_or_update_animal_loop(self.animal_id, wav_path)
 
     def _draw_margin_markers(self):
         self.left_marker_slot = 0
@@ -259,8 +254,8 @@ class RecordScreen(Screen):
         )
         self.canvas.after.add(self.right_marker_line)
 
-        self.loop_engine.set_left_margin_of_recording(self.animal_id, self.left_marker_slot)
-        self.loop_engine.set_right_margin_of_recording(self.animal_id, self.right_marker_slot)
+        self.loop_engine.set_left_margin_of_recording(self.left_marker_slot)
+        self.loop_engine.set_right_margin_of_recording(self.right_marker_slot)
         
     def _update_markers_for_sample_size(self):
         """Update marker positions based on current sample size selection."""
@@ -283,8 +278,8 @@ class RecordScreen(Screen):
         self._update_marker_lines()
         
         # Update loop engine
-        self.loop_engine.set_left_margin_of_recording(self.animal_id, self.left_marker_slot)
-        self.loop_engine.set_right_margin_of_recording(self.animal_id, self.right_marker_slot)
+        self.loop_engine.set_left_margin_of_recording(self.left_marker_slot)
+        self.loop_engine.set_right_margin_of_recording(self.right_marker_slot)
 
     def _update_marker_lines(self):
         if not self.left_marker_line or not self.right_marker_line:
@@ -365,55 +360,24 @@ class RecordScreen(Screen):
             self.right_marker_slot = self.grid.get_slot_from_x(self.right_marker_x)
             
             # Update loop engine with the current positions
-            self.loop_engine.set_left_margin_of_recording(self.animal_id, self.left_marker_slot)
-            self.loop_engine.set_right_margin_of_recording(self.animal_id, self.right_marker_slot)
+            self.loop_engine.set_left_margin_of_recording(self.left_marker_slot)
+            self.loop_engine.set_right_margin_of_recording(self.right_marker_slot)
 
             self.dragging_marker = None
             return True
 
         return super(RecordScreen, self).on_touch_up(touch)
 
-    def _trim_recording_to_loop_window(self) -> str:
-        wav_path = get_recording_wav_path(self.animal_id)
-        if not os.path.exists(wav_path):
-            return wav_path
-
-        offset = self.loop_engine.get_loop_offset(self.animal_id)
-        duration = self.loop_engine.get_loop_duration(self.animal_id)
-        if duration <= 0:
-            return wav_path
-
-        data, sr = sf.read(wav_path, always_2d=False)
-        if data.size == 0:
-            return wav_path
-
-        start = int(offset * sr)
-        end = start + int(duration * sr)
-        start = max(0, min(start, len(data)))
-        end = max(start, min(end, len(data)))
-        trimmed = data[start:end]
-        if trimmed.size == 0:
-            return wav_path
-
-        sf.write(wav_path, trimmed, sr)
-        self.loop_engine.add_or_update_animal_loop(self.animal_id, wav_path)
-
-        return wav_path
-
     def _add_animal(self, *_):
-        wav_path = self._trim_recording_to_loop_window()
+        self.loop_engine.add_animal_loop(self.animal_id)
+        wav_path = get_recording_wav_path(self.animal_id, "tuned")
         out_dir = get_animal_data_dir(self.animal_id)
         out_path = os.path.join(out_dir, "open.png")
-
-        offset = 0.0
-        duration = self.loop_engine.get_loop_duration(self.animal_id)
 
         render_creature_image(
             wav_path,
             out_dir,
             size=(640, 480),
-            offset=offset,
-            duration=duration,
         )
 
         animal = Animal(
