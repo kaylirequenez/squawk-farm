@@ -23,6 +23,7 @@ from squawkfarm.services.loop_engine import LoopEngine
 from squawkfarm.services.arpeggio_processor import build_arpeggiated_loop_for_animal
 from ..models.animal import Animal
 from squawkfarm.widgets.animal_widget import AnimalWidget
+from squawkfarm.widgets.sun_widget import SunWidget
 from squawkfarm.utils import get_ui_asset_path
 
 
@@ -38,17 +39,12 @@ class GardenScreen(Screen):
         self.active_animal_id = None
 
         self.farm_path = get_ui_asset_path("4x4Farm.png")
-        self.sun_path = get_ui_asset_path("cutes.png")
         self.barn_path = get_ui_asset_path("redbarn2.png")
         self.woodB_path = get_ui_asset_path("woodB2.png")
 
         self.bg_image = Image(source=self.farm_path).texture
         self.buttons = {}
         Window.clearcolor = (0.5, 0.2, 1, 1)
-
-        self.sun = Image(source=self.sun_path, keep_data=True).texture
-        self.sun_const = 9
-        self.s_size = Window.height / self.sun_const
 
         self.barn = Image(source=self.barn_path).texture
         self.b_size = Window.width / 8
@@ -73,12 +69,8 @@ class GardenScreen(Screen):
         self.barn_button.bind(on_press=self.on_barn_press)
         self.add_widget(self.barn_button)
 
-        with self.canvas:
-            self.sun_rect = Rectangle(
-                pos=(0, 0),
-                size=(self.s_size, self.s_size),
-                texture=self.sun,
-            )
+        self.sun_widget = SunWidget()
+        self.add_widget(self.sun_widget)
 
         Window.bind(size=self.on_resize)
         Clock.schedule_interval(self._update_animals, 1.0 / 30.0)
@@ -159,9 +151,6 @@ class GardenScreen(Screen):
     def on_resize(self, *args):
         self.bg_rect.pos = (0, 0)
         self.bg_rect.size = Window.size
-        self.s_size = Window.height / self.sun_const
-        self.sun_rect.size = (self.s_size, self.s_size)
-        self.sun_rect.pos = (0, Window.height - self.s_size)
         self.b_size = Window.width / 6
         new_size = (self.b_size, self.b_size)
         new_pos = (Window.width - self.b_size, 0)

@@ -233,3 +233,4 @@ class AnimalWidget(Image):
                 self._move_duration = 0.0
                 self._move_elapsed = 0.0
                 self._segment_count = 1
+
