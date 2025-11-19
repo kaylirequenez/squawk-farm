@@ -14,12 +14,14 @@ from squawkfarm.models.loop import AnimalLoop, GlobalLoopSettings, LoopInstance
 from imslib.clock import AudioScheduler, SimpleTempoMap, kTicksPerQuarter
 from kivy.clock import Clock
 
-from squawkfarm.utils import tune_sample_and_save, tune_to_midi, frame_to_time, time_to_frame, guess_role_from_pitch, get_recording_wav_path
+from squawkfarm.utils import tune_sample_and_save, tune_to_midi, frame_to_time, time_to_frame, guess_initial_role, get_recording_wav_path
 
 
 MAX_MEASURES = 4
 MIN_BPM = 60
 MAX_BPM = 120
+MIN_ROOT = 48  # C3
+MAX_ROOT = 72  # C5
 
 COMMON_TIME_SIGNATURES = [
     # simple duple
@@ -230,7 +232,7 @@ class Loop(object):
         self.num_frames = num_frames # number of frames in the trimmed recording
         self.midi = midi
         self.volume = volume
-        self.role = role # "bass", "harmony", or "melody"
+        self.role = role # "bass", "harmony", "melody", or "percussion"
 
         self.instances: Dict[int, RuntimeLoopInstance] = {}
         for loop in loop_instances:
@@ -245,11 +247,12 @@ class Loop(object):
         """Return number of frames in the loop instance at the given slot."""
         return self.instances[slot].num_frames
 
-    def get_slot_ranges(self, frame_to_slot: Callable[[int], int]) -> List[Tuple[int, int]]:
+    def get_loop_instance_info(self, frame_to_slot: Callable[[int], int]) -> List[Tuple[int, int, int]]:
         """
-        Get list of (start_slot, num_slots) for all loop instances.
+        Get list of (start_slot, num_slots, midi) for all loop instances.
+        Used for UI rendering of the grid.
         """
-        return [(start_slot, frame_to_slot(instance.num_frames)) for start_slot, instance in self.instances.items()]
+        return [(start_slot, frame_to_slot(instance.num_frames), instance.midi) for start_slot, instance in self.instances.items()]
 
     def get_generator(self, start_slot: int, frame_offset: int = 0, loop: bool = False) -> WaveGenerator:
         """
@@ -298,7 +301,7 @@ class Loop(object):
             return old_start_slot
         elif not overlap and any(
             left_slot <= new_start_slot <= right_slot and old_start_slot != left_slot
-            for left_slot, right_slot in self.get_slot_ranges(frame_to_slot)
+            for left_slot, right_slot, _ in self.get_loop_instance_info(frame_to_slot)
         ):
             return old_start_slot
         else:
@@ -353,6 +356,7 @@ class LoopEngine(object):
         self.bass_animals: set[str] = set()
         self.melody_animals: set[str] = set()
         self.harmony_animals: set[str] = set()
+        self.percussion_animals: set[str] = set()
         
         for id, loop in animal_loops.items():
             audio_data, _ = librosa.load(get_recording_wav_path(id, "tuned"), sr=Audio.sample_rate)
@@ -439,6 +443,7 @@ class LoopEngine(object):
         Returns True if set, False if there are existing loops and it cannot be changed.
         """
         if not self.loops:
+            root = max(MIN_ROOT, min(MAX_ROOT, root))
             self.root = root
             return True
         return False
@@ -458,9 +463,12 @@ class LoopEngine(object):
         """Return the total number of slots in the full loop."""
         return self.total_slots
 
-    def get_slot_ranges(self, animal_id: str) -> List[Tuple[int, int]]:
-        """Return list of slot ranges for drawing the grid for a given animal."""
-        return self.loops[animal_id].get_slot_ranges(self.frame_to_slot)
+    def get_loop_instance_info(self, animal_id: str) -> List[Tuple[int, int, int]]:
+        """
+        Return list of (start_slot, num_slots, midi) for drawing the grid for a given animal.
+        Used for UI rendering.
+        """
+        return self.loops[animal_id].get_loop_instance_info(self.frame_to_slot)
 
     def get_time_from_slots(self, slots: float) -> float:
         """Returns total loop time in seconds for a given number of slots."""
@@ -478,7 +486,13 @@ class LoopEngine(object):
         start_frame, num_frames = self.recording.start_frame, self.recording.get_num_frames()
         trimmed_data = self.recording.trimmed.data
         audio_data, midi = tune_sample_and_save(animal_id, trimmed_data)
-        role = guess_role_from_pitch(midi, self.root)
+        
+        # Calculate number of beats from number of frames
+        num_slots = self.frame_to_slot(num_frames)
+        num_beats = num_slots // self.ppb  # ppb is pulses (slots) per beat
+        
+        role = "bass" # TODO: change default after finishing other types
+        # role = guess_initial_role(midi, self.root, num_beats)
         self.loops[animal_id] = Loop(audio_data, start_frame, num_frames, midi, 0.5, role)
         self._add_to_role_set(animal_id, role)
         self.recording = None
@@ -561,6 +575,9 @@ class LoopEngine(object):
         """
         Set the role of an animal loop.
         Call this when user changes an animal's role.
+        
+        :param animal_id: The animal's unique identifier
+        :param role: "bass", "harmony", "melody", or "percussion"
         """
         old_role = self.loops[animal_id].role
         self._remove_from_role_set(animal_id, old_role)
@@ -688,7 +705,7 @@ class LoopEngine(object):
         tick_offset = self.scheduler.tempo_map.time_to_tick(start_time)
 
         for animal_id, loop in self.loops.items():
-            for start_slot, num_slots in loop.get_slot_ranges(self.frame_to_slot):
+            for start_slot, num_slots, midi in loop.get_loop_instance_info(self.frame_to_slot):
                 wave_generator = None
                 tick = self.slot_to_tick(start_slot)
                 if tick >= tick_offset:
@@ -753,6 +770,8 @@ class LoopEngine(object):
             self.melody_animals.add(animal_id)
         elif role == "harmony":
             self.harmony_animals.add(animal_id)
+        elif role == "percussion":
+            self.percussion_animals.add(animal_id)
     
     def _remove_from_role_set(self, animal_id: str, role: str) -> None:
         """Remove animal from the appropriate role set."""
@@ -762,6 +781,8 @@ class LoopEngine(object):
             self.melody_animals.discard(animal_id)
         elif role == "harmony":
             self.harmony_animals.discard(animal_id)
+        elif role == "percussion":
+            self.percussion_animals.discard(animal_id)
     
     def _get_beats_per_measure(self) -> int:
         """Return the number of beats per measure (time signature numerator)."""

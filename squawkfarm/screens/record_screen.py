@@ -22,6 +22,7 @@ from squawkfarm.utils import (
     get_animal_data_dir,
 )
 from squawkfarm.utils import get_animal_recording_dir
+from squawkfarm.services.composition import generate_random_baseline
 
 
 class RecordScreen(Screen):
@@ -370,6 +371,17 @@ class RecordScreen(Screen):
 
     def _add_animal(self, *_):
         self.loop_engine.add_animal_loop(self.animal_id)
+        
+        # TODO: Get the actual role of this animal from loop_engine
+        # and call the appropriate generation function:
+        # - generate_random_baseline() for "bass"
+        # - generate_random_harmony() for "harmony"
+        # - generate_random_melody() for "melody"
+        # - generate_random_percussion() for "percussion" 
+        
+        # For now, we assume bass role and generate a baseline
+        generate_random_baseline(self.loop_engine, self.animal_id)
+        
         wav_path = get_recording_wav_path(self.animal_id, "tuned")
         out_dir = get_animal_data_dir(self.animal_id)
         out_path = os.path.join(out_dir, "open.png")

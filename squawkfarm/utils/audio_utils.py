@@ -93,3 +93,25 @@ def guess_role_from_pitch(animal_midi: int, root_midi: int = 60) -> str:
         return "harmony"
 
 
+def guess_initial_role(
+    animal_midi: int,
+    root_midi: int = 60,
+    beats: int = 4,
+) -> str:
+    """
+    Guess an initial role for an animal using both pitch and loop length.
+
+    Rules:
+    - If the loop is very short (1 beat), we *assume* it is likely percussive
+      or a short stab, and default to "percussion".
+    - Otherwise, we use pitch-based guessing to choose between
+      "bass", "harmony", and "melody".
+    """
+    # Treat 1-beat (or less if changed in future) samples as likely percussion by default.
+    if beats <= 1:
+        return "percussion"
+
+    # For 2 or 4 beats, fall back to pitch-based roles.
+    return guess_role_from_pitch(animal_midi, root_midi)
+
+
