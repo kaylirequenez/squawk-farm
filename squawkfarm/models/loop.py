@@ -33,7 +33,7 @@ class AnimalLoop:
     num_frames: int # number of frames in the trimmed recording
     midi: int # default MIDI pitch
     volume: float # 1.0 = max volume
-    role: str # "bass", "harmony", or "melody"
+    role: str # "bass", "harmony", "melody", or "percussion"
 
     # maps audio_path -> LoopInstance with start_slot and muted_slots
     instances: Dict[str, LoopInstance] = field(default_factory=dict)

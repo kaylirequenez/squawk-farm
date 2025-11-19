@@ -17,10 +17,8 @@ from kivy.graphics.opengl import (
     GL_ONE_MINUS_SRC_ALPHA,
 )
 from kivy.clock import Clock
-from collections import deque
 
 from squawkfarm.services.loop_engine import LoopEngine
-# from squawkfarm.services.arpeggio_processor import build_arpeggiated_loop_for_animal
 from ..models.animal import Animal
 from squawkfarm.widgets.animal_widget import AnimalWidget
 from squawkfarm.widgets.sun_widget import SunWidget
