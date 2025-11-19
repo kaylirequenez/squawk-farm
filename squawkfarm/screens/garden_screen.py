@@ -80,7 +80,7 @@ class GardenScreen(Screen):
         widget = self.animal_widgets.get(animal.animal_id)
 
         if widget is None:
-            widget = AnimalWidget(animal)
+            widget = AnimalWidget(animal, on_click_callback=self._on_animal_click)
 
             width, height = Window.size
             margin = 10
@@ -142,3 +142,10 @@ class GardenScreen(Screen):
 
     def on_barn_press(self, instance):
         self.switch_to("record")
+
+    def _on_animal_click(self, animal_id: str):
+        """Handle clicks on animals - switch to loop editor to view/edit their loop."""
+        animal = self.animals.get(animal_id)
+        if animal:
+            # Switch to loop editor with the animal's data
+            self.switch_to("loop", animal_id, 8)

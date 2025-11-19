@@ -9,8 +9,9 @@ from ..models.animal import Animal
 
 
 class AnimalWidget(Image):
-    def __init__(self, animal: Animal, **kwargs):
+    def __init__(self, animal: Animal, on_click_callback=None, **kwargs):
         self.animal = animal
+        self.on_click_callback = on_click_callback
         self.sprite_paths: Dict[Tuple[str, str], str] = self._derive_sprite_paths(
             animal.image_path
         )
@@ -233,4 +234,11 @@ class AnimalWidget(Image):
                 self._move_duration = 0.0
                 self._move_elapsed = 0.0
                 self._segment_count = 1
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            if self.on_click_callback:
+                self.on_click_callback(self.animal.animal_id)
+            return True
+        return super().on_touch_down(touch)
 

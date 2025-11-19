@@ -24,7 +24,6 @@ class LoopEditorScreen(Screen):
     def __init__(self, **kwargs):
         super(LoopEditorScreen, self).__init__(**kwargs)
         self.wood_rect = None
-        self.waveform_line = None
         self.barn_button = None
         self.barn_rect = None
         # Trash control (bottom-left) and its texture rect
@@ -64,12 +63,10 @@ class LoopEditorScreen(Screen):
         Window.bind(size=self.on_resize)
 
     def on_enter(self, animal_id: str, num_slots: int):
-        # Draw UI each time we enter to reflect any new recordings
+        # Store animal information but don't load waveform
         self.animal_id = animal_id
         self.num_slots = num_slots
-        self.wav = get_recording_wav_path(animal_id, "raw")
-        self.waveform_points = self._load_waveform_points_from_file(self.wav)
-        self._draw_board_and_waveform()
+        self._draw_board_and_horizontal_lines()
 
     def on_leave(self, *args):
         # cleanup if needed
@@ -101,16 +98,11 @@ class LoopEditorScreen(Screen):
         pts = [float(s) / max_sample for s in samples[::decimation]]
         return pts
 
-    def _draw_board_and_waveform(self):
+    def _draw_board_and_horizontal_lines(self):
         # remove previous widgets/canvas items if any
         if self.wood_rect:
             try:
                 self.canvas.before.remove(self.wood_rect)
-            except Exception:
-                pass
-        if self.waveform_line:
-            try:
-                self.canvas.remove(self.waveform_line)
             except Exception:
                 pass
         if self.left_marker_line:
@@ -183,29 +175,23 @@ class LoopEditorScreen(Screen):
         self.barn_button.bind(on_press=self.on_barn_press)
         self.add_widget(self.barn_button)
 
-        # compute points across central 13/15ths of screen
+        # compute central area for drawing lines
         width = Window.width
         margin = width / 15
         draw_width = width - 2 * margin
         center_y = Window.height / 2
-
-        # build line points
-        points = []
-        if len(self.waveform_points) < 2:
-            # flat center line
-            points = [margin, center_y, margin + draw_width, center_y]
-        else:
-            denom = max(1, len(self.waveform_points) - 1)
-            for i, s in enumerate(self.waveform_points):
-                x = margin + (i / denom) * draw_width
-                y = center_y + float(s) * self.viz_scale
-                points.extend([x, y])
+        line_spacing = Window.height * 0.05  # Spacing between horizontal lines
 
         with self.canvas:
-            Color(0, 0.8, 0, 1)
-            self.waveform_line = Line(points=points, width=1.5)
+            Color(0, 0.8, 0, 1)  # Green color for horizontal lines
+            # Draw 8 horizontal lines centered in the middle of the screen
+            for i in range(8):
+                # Calculate y position for each line, centered around middle of screen
+                y_offset = (i - 3.5) * line_spacing  # Center around line 3.5 for 8 lines
+                y = center_y + y_offset
+                Line(points=[margin, y, margin + draw_width, y], width=2)
             
-            # Draw 9 vertical marker lines dividing the waveform into 8 equal parts
+            # Draw 9 vertical marker lines dividing the area into 8 equal parts
             Color(0, 0, 0, 0.5)  # Semi-transparent black
             for i in range(9):
                 x = margin + (i / 8) * draw_width
@@ -520,58 +506,6 @@ class LoopEditorScreen(Screen):
             self.trash_rect.pos = self.trash_button.pos
             self.trash_rect.size = self.trash_button.size
         
-        # Redraw waveform and markers on resize
-        if self.waveform_points:
-            width = Window.width
-            margin = width / 15
-            draw_width = width - 2 * margin
-            center_y = Window.height / 2
-            
-            # Redraw waveform line
-            points = []
-            denom = max(1, len(self.waveform_points) - 1)
-            for i, s in enumerate(self.waveform_points):
-                x = margin + (i / denom) * draw_width
-                y = center_y + float(s) * self.viz_scale
-                points.extend([x, y])
-            
-            # Clear canvas and redraw everything
-            self.canvas.clear()
-            with self.canvas:
-                Color(0, 0.8, 0, 1)
-                self.waveform_line = Line(points=points, width=1.5)
-                
-                # Redraw 9 vertical marker lines
-                Color(0, 0, 0, 0.5)  # Semi-transparent black
-                for i in range(9):
-                    x = margin + (i / 8) * draw_width
-                    Line(points=[x, center_y - Window.height * 0.25, x, center_y + Window.height * 0.25], width=1)
-                
-                # Redraw left and right loop markers
-                Color(1, 0, 0, 1)  # Red for loop markers
-                self.left_marker_x = margin
-                self.left_marker_line = Line(
-                    points=[self.left_marker_x, center_y - Window.height * 0.35, self.left_marker_x, center_y + Window.height * 0.35],
-                    width=2.5
-                )
-                self.right_marker_x = margin + draw_width
-                self.right_marker_line = Line(
-                    points=[self.right_marker_x, center_y - Window.height * 0.35, self.right_marker_x, center_y + Window.height * 0.35],
-                    width=2.5
-                )
-                
-                Color(1, 1, 1, 1)
-                # Redraw barn texture
-                try:
-                    # trash texture
-                    trash_path = get_ui_asset_path("trashcan2.png")
-                    trash_tex = Image(source=trash_path).texture if os.path.exists(trash_path) else None
-                    if trash_tex and self.trash_button:
-                        self.trash_rect = Rectangle(pos=self.trash_button.pos, size=self.trash_button.size, texture=trash_tex)
-                    # barn texture
-                    barn_path = get_ui_asset_path("redbarn2.png")
-                    barn_tex = Image(source=barn_path).texture if os.path.exists(barn_path) else None
-                    if barn_tex and self.barn_button:
-                        self.barn_rect = Rectangle(pos=self.barn_button.pos, size=self.barn_button.size, texture=barn_tex)
-                except Exception:
-                    pass
+        # Redraw horizontal lines and markers on resize
+        # Simply redraw everything using the new method
+        self._draw_board_and_horizontal_lines()
