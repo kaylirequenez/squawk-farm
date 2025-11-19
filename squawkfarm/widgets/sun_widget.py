@@ -7,8 +7,6 @@ from kivy.core.window import Window
 from kivy.clock import Clock
 from squawkfarm.utils import get_ui_asset_path
 
-
-
 class SunWidget(Image):
     def __init__(self, **kwargs):
         kwargs.setdefault("size_hint", (None, None))
@@ -16,11 +14,15 @@ class SunWidget(Image):
         kwargs.setdefault("keep_ratio", True)
         super().__init__(**kwargs)
 
-        self.source = get_ui_asset_path("cutes.png")
+        self.source = get_ui_asset_path("sun.png")
 
         self._is_large = False
         self._medium_size = (Window.height * 0.1, Window.height * 0.1)
-        self._large_size = (Window.height * 0.15, Window.height * 0.15)
+        self._large_size = (Window.height * 0.12, Window.height * 0.12)
+
+        # store the fixed center point for the sun in the top-left corner
+        self._center_target = (self._medium_size[0] / 2.0,
+                               Window.height - self._medium_size[1] / 2.0)
 
         self._update_size_and_pos()
 
@@ -30,6 +32,13 @@ class SunWidget(Image):
     def _on_window_resize(self, *args):
         self._medium_size = (Window.height * 0.1, Window.height * 0.1)
         self._large_size = (Window.height * 0.15, Window.height * 0.15)
+
+        # update the stored target center Y (X stays same)
+        self._center_target = (
+            self._center_target[0],
+            Window.height - self.height / 2.0
+        )
+
         self._update_size_and_pos()
 
     def _on_beat(self, dt: float):
@@ -37,8 +46,13 @@ class SunWidget(Image):
         self._update_size_and_pos()
 
     def _update_size_and_pos(self):
+        # pick size
         if self._is_large:
             self.size = self._large_size
         else:
             self.size = self._medium_size
-        self.pos = (0, Window.height - self.height)
+
+        # recenter sun so its center stays locked
+        cx, cy = self._center_target
+        self.pos = (cx - self.width / 2.0,
+                    cy - self.height / 2.0)

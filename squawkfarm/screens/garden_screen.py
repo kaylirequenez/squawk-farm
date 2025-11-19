@@ -36,7 +36,7 @@ class GardenScreen(Screen):
         self.animal_widgets = {}
         self.active_animal_id = None
 
-        self.farm_path = get_ui_asset_path("4x4Farm.png")
+        self.farm_path = get_ui_asset_path("lawn.png")
         self.barn_path = get_ui_asset_path("redbarn2.png")
         self.woodB_path = get_ui_asset_path("woodB2.png")
 
