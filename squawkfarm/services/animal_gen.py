@@ -234,7 +234,7 @@ def fit_body_to_canvas(cx, cy, rx, ry, oblong, margin=18):
     right = cx + rx
     top = cy - ry * oblong
     bottom = cy + ry * oblong
-    sx = sy = 1.0
+    sx = sy = 1
     if left < margin:
         sx = min(sx, (cx - margin) / rx)
     if right > W_FRAME - margin:
@@ -348,10 +348,14 @@ def make_shadow_layer(img, ground_y, opacity=80, squash=0.7, offset_y=3):
     shadow_layer.paste(shadow_fill, (0, y_paste), ref)
 
     return shadow_layer
-
-
 def render_creature_image(
-    wav_path, out_dir, size=(W_FRAME, H_FRAME), offset=None, duration=None, seed=None
+    wav_path,
+    out_dir,
+    size=(W_FRAME, H_FRAME),
+    offset=None,
+    duration=None,
+    seed=None,
+    canvas_scale=2.0,
 ):
     os.makedirs(out_dir, exist_ok=True)
     shadow_dir = os.path.join(out_dir, "shadow")
@@ -394,12 +398,15 @@ def render_creature_image(
     cx = W * 0.5
     cy = H * 0.5 + (leg_down - ear_up) / 2.0
 
+    squash = 0.7
+    offset_y = 3
+
     for name, mouth_deg in (("closed", 8), ("open", 55)):
         path = os.path.join(out_dir, f"{name}.png")
         shadow_path = os.path.join(shadow_dir, f"{name}.png")
 
-        img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
+        img_base = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img_base)
 
         bottom_y = cy + ry * oblong
         leg_top = bottom_y - overlap_in
@@ -409,7 +416,6 @@ def render_creature_image(
         left_x = base_x - spacing / 2
         right_x = base_x + spacing / 2
 
-        # --- Legs (unchanged) ---
         d.rectangle(
             [left_x - leg_w / 2, leg_top, left_x + leg_w / 2, leg_top + leg_len],
             fill=pal["base"],
@@ -419,43 +425,78 @@ def render_creature_image(
             fill=pal["base"],
         )
 
-        # --- Body + ears (unchanged order) ---
-        fill_body_opaque(img, cx, cy, rx, ry, pal["base"])
+        fill_body_opaque(img_base, cx, cy, rx, ry, pal["base"])
         draw_ears_flush_on_top(d, cx, cy, rx, ry, oblong, params["ear_type"], pal["base"])
-        draw_body(d, cx, cy, rx, ry, pal, params["body_mode"], params["body_param"], oblong_scale=oblong)
+        draw_body(
+            d,
+            cx,
+            cy,
+            rx,
+            ry,
+            pal,
+            params["body_mode"],
+            params["body_param"],
+            oblong_scale=oblong,
+        )
 
-        # --- Optional patterns (unchanged) ---
         if params["pattern"] == "gradient":
-            draw_gradient_pattern(img, cx, cy, rx, ry, pal["accent"], pal["base"])
+            draw_gradient_pattern(img_base, cx, cy, rx, ry, pal["accent"], pal["base"])
         elif params["pattern"] == "stripes":
-            draw_stripes_pattern(img, cx, cy, rx, ry, pal["accent"])
+            draw_stripes_pattern(img_base, cx, cy, rx, ry, pal["accent"])
 
-        # --- Face (unchanged) ---
-        draw_eye(d, cx, cy, rx, ry, pal, eye_shape=params["eye_shape"], eye_scale=params["eye_scale"])
-        draw_mouth(img, cx, cy, rx, ry, open_deg=mouth_deg)
+        draw_eye(
+            d,
+            cx,
+            cy,
+            rx,
+            ry,
+            pal,
+            eye_shape=params["eye_shape"],
+            eye_scale=params["eye_scale"],
+        )
+        draw_mouth(img_base, cx, cy, rx, ry, open_deg=mouth_deg)
 
-        # --- Build shadow-only layer from the finished creature ---
         ground_y = leg_top + leg_len
-        shadow_layer = make_shadow_layer(img, ground_y, opacity=80, squash=0.7, offset_y=3)
+        H_work = H
+        H_needed = int(ground_y + offset_y + ground_y * squash)
+        if H_needed > H_work:
+            H_work = H_needed
+            img = Image.new("RGBA", (W, H_work), (0, 0, 0, 0))
+            img.paste(img_base, (0, 0))
+        else:
+            img = img_base
 
-        # --- Pixelate both, but DO NOT combine them ---
+        shadow_layer = make_shadow_layer(
+            img, ground_y, opacity=80, squash=squash, offset_y=offset_y
+        )
+
         img_pix = pixelate_image(img, factor=15)
         shadow_pix = pixelate_image(shadow_layer, factor=15)
 
-        # Save main creature (no shadow baked in)
-        img_pix.save(path)
+        out_W = int(W * canvas_scale)
+        out_H = int(H_work * canvas_scale)
 
-        # Save shadow-only sprite
-        shadow_pix.save(shadow_path)
+        if canvas_scale != 1.0:
+            ox = (out_W - W) // 2
+            oy = (out_H - H_work) // 2
+            framed = Image.new("RGBA", (out_W, out_H), (0, 0, 0, 0))
+            framed.paste(img_pix, (ox, oy))
+            framed_shadow = Image.new("RGBA", (out_W, out_H), (0, 0, 0, 0))
+            framed_shadow.paste(shadow_pix, (ox, oy))
+        else:
+            framed = img_pix
+            framed_shadow = shadow_pix
 
-        # Mirrored variants: creature + shadow
+        framed.save(path)
+        framed_shadow.save(shadow_path)
+
         left_path = os.path.join(out_dir, f"{name}_left.png")
         left_shadow_path = os.path.join(shadow_dir, f"{name}_left.png")
 
-        flipped = ImageOps.mirror(img_pix)
+        flipped = ImageOps.mirror(framed)
         flipped.save(left_path)
 
-        flipped_shadow = ImageOps.mirror(shadow_pix)
+        flipped_shadow = ImageOps.mirror(framed_shadow)
         flipped_shadow.save(left_shadow_path)
 
     return closed_path, open_path

@@ -144,7 +144,7 @@ class AnimalWidget(Image):
 
         base_size = animal.size if animal.size is not None else (100.0, 100.0)
         w, h = base_size
-        self.size = (w * 3.0, h * 3.0)
+        self.size = (w * 8.0, h * 8.0)
 
         if animal.pos is not None:
             self.pos = animal.pos

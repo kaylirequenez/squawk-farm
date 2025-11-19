@@ -17,12 +17,11 @@ class SunWidget(Image):
         self.source = get_ui_asset_path("sun.png")
 
         self._is_large = False
-        self._medium_size = (Window.height * 0.1, Window.height * 0.1)
-        self._large_size = (Window.height * 0.12, Window.height * 0.12)
+        self._medium_size = (Window.height * 0.15, Window.height * 0.15)
+        self._large_size = (Window.height * 0.17, Window.height * 0.17)
 
-        # store the fixed center point for the sun in the top-left corner
-        self._center_target = (self._medium_size[0] / 2.0,
-                               Window.height - self._medium_size[1] / 2.0)
+        self._center_target = (self._medium_size[0]*1.3 / 2.0,
+                               Window.height - self._medium_size[1]*1.3 / 2.0)
 
         self._update_size_and_pos()
 
@@ -46,13 +45,11 @@ class SunWidget(Image):
         self._update_size_and_pos()
 
     def _update_size_and_pos(self):
-        # pick size
         if self._is_large:
             self.size = self._large_size
         else:
             self.size = self._medium_size
 
-        # recenter sun so its center stays locked
         cx, cy = self._center_target
         self.pos = (cx - self.width / 2.0,
                     cy - self.height / 2.0)
