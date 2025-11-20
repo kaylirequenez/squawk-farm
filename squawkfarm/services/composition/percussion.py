@@ -5,11 +5,9 @@ from __future__ import annotations
 from typing import List
 import random
 
-from squawkfarm.services.loop_engine import LoopEngine
-
 
 def generate_random_percussion(
-    engine: LoopEngine,
+    engine,
     animal_id: str,
 ) -> None:
     """

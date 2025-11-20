@@ -35,10 +35,10 @@ def on_enter(self):
     
     # Get the animal's current role
     animal_loop = self.loop_engine.loops.get(self.animal_id)
-    role = self.loop_engine.get_role(self.animal_id)  # "bass", "harmony", "melody", or "percussion"
+    role = animal_loop.role  # "bass", "harmony", "melody", or "percussion"
     
-    # Get the MIDI range for this role
-    low_midi, high_midi = get_role_register(role)
+    # Get the MIDI range for this animal (one-octave band)
+    low_midi, high_midi = self.loop_engine.get_animal_pitch_range(self.animal_id)
     
     # Use low_midi and high_midi to:
     # - Display note labels on the UI (e.g., C2 to E3 for bass)
@@ -100,8 +100,8 @@ def _on_role_change(self, new_role):
     # Update the role in the loop engine
     self.loop_engine.set_role_of_loop(self.animal_id, new_role)
     
-    # Get the new MIDI range for this role
-    low_midi, high_midi = get_role_register(new_role)
+    # Get the new MIDI range for this animal (one-octave band)
+    low_midi, high_midi = self.loop_engine.get_animal_pitch_range(self.animal_id)
     
     # Update UI to show new range
     self._update_midi_range_display(low_midi, high_midi)
@@ -165,9 +165,8 @@ def on_touch_move(self, touch):
         # Calculate new MIDI note from touch.y
         new_midi = self.grid.get_midi_from_y(touch.y)
         
-        # Get the role's MIDI range to constrain the pitch
-        role = self.loop_engine.loops[self.animal_id].role
-        low_midi, high_midi = get_role_register(role)
+    # Get the animal's specific pitch range (one-octave band)
+    low_midi, high_midi = self.loop_engine.get_animal_pitch_range(self.animal_id)
         
         # Clamp to role's register
         new_midi = max(low_midi, min(high_midi, new_midi))
@@ -224,10 +223,9 @@ def on_touch_move(self, touch):
         # VERTICAL: Change pitch
         new_midi = self.grid.get_midi_from_y(touch.y)
         
-        # Constrain to role's register
-        role = self.loop_engine.loops[self.animal_id].role
-        low_midi, high_midi = get_role_register(role)
-        new_midi = max(low_midi, min(high_midi, new_midi))
+    # Constrain to animal's specific register (one-octave band)
+    low_midi, high_midi = self.loop_engine.get_animal_pitch_range(self.animal_id)
+    new_midi = max(low_midi, min(high_midi, new_midi))
         
         # Update pitch if changed
         if new_midi != self.original_midi:
@@ -322,8 +320,8 @@ def midi_to_note_name(midi: int) -> str:
 
 The loop editor needs to track:
 - `self.animal_id`: The animal being edited
-- `self.current_role`: The animal's current role (from `loop_engine.loops[animal_id].role`)
-- MIDI range bounds: `(low_midi, high_midi)` from `get_role_register(role)`
+- `self.current_role`: The animal's current role (from `loop_engine.get_animal_role(animal_id)`)
+- MIDI range bounds: `(low_midi, high_midi)` from `loop_engine.get_animal_pitch_range(animal_id)`
 
 ## Testing Checklist
 
@@ -340,7 +338,7 @@ The loop editor needs to track:
 - [ ] Can drag loop instances horizontally to change timing
 - [ ] Horizontal dragging respects collision detection when overlap=False
 - [ ] Can drag loop instances vertically to change pitch
-- [ ] Vertical dragging is constrained to role's MIDI range
+- [ ] Vertical dragging is constrained to the animal's specific one-octave MIDI range
 - [ ] 2D dragging (timing + pitch) works smoothly
 - [ ] Dragged instances play back at new positions/pitches correctly
 
@@ -353,7 +351,7 @@ The loop editor needs to track:
 - **Overlap Control**: The `overlap` parameter in `slide_loop_instance()` controls whether instances can overlap:
   - `overlap=False` (recommended): Prevents overlapping, returns original position if collision detected
   - `overlap=True`: Allows instances to stack on top of each other (may cause audio issues)
-- **Pitch Constraints**: Always constrain pitch changes to the role's register using `get_role_register()` to maintain musical coherence
+- **Pitch Constraints**: Always constrain pitch changes to the animal's specific one-octave register using `loop_engine.get_animal_pitch_range(animal_id)` to maintain musical coherence
 
 ## Questions?
 

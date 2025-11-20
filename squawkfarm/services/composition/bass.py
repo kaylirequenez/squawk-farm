@@ -1,11 +1,10 @@
 from typing import List, Set
 from random import random, choice, shuffle
 
-from squawkfarm.services.loop_engine import LoopEngine
 from squawkfarm.services.composition.utils import (
-    make_role_scale_for_engine,
+    build_scale,
+    extend_scale_across_register,
     snap_to_scale,
-    get_role_register,
 )
 
 # Chance that a measure is *intentionally* a full rest
@@ -36,7 +35,7 @@ def _infer_bass_register_candidate(base_midi: int, root_midi: int) -> int:
     return min(filtered, key=lambda c: abs(c - base_midi))
 
 
-def _collect_existing_bass_slots(engine: LoopEngine, current_animal_id: str) -> Set[int]:
+def _collect_existing_bass_slots(engine, current_animal_id: str) -> Set[int]:
     """
     Collect all grid slots currently used by OTHER bass animals.
     """
@@ -123,7 +122,7 @@ def _generate_bass_slots_for_measure(
 # Public API
 # ---------------------------------------------------------------------------
 
-def generate_random_baseline(engine: LoopEngine, animal_id: str) -> None:
+def generate_random_baseline(engine, animal_id: str) -> None:
     """
     Generate a random bassline pattern for a given animal and write it into
     the global grid via the LoopEngine.
@@ -147,29 +146,29 @@ def generate_random_baseline(engine: LoopEngine, animal_id: str) -> None:
     # ============================================================================
     # STEP 1: Figure out what MIDI notes to use for this bassline
     # ============================================================================
+    low, high = engine.get_animal_pitch_range(animal_id)
 
+    # Global key info
     root_midi = engine.get_root()
-    
-    # Find a good starting candidate for our bass root note
-    # This considers the animal's natural pitch and the key's root
+    mode = engine.get_key_mode()
+
+    # Build one-octave scale for the key, then tile it ONLY inside [low, high]
+    # So the extended_scale contains *all and only* legal notes for this animal.
+    base_scale = build_scale(root_midi, mode)
+    extended_scale = extend_scale_across_register(base_scale, low, high)
+
+    # Find a good starting candidate for our bass "root" note:
+    # this considers the animal's natural pitch and the key's root.
     candidate = _infer_bass_register_candidate(loop.midi, root_midi)
 
-    # Build a scale in the bass register (e.g., C2, D2, E2, F2, G2, A2, B2, C3...)
-    # This contains all the "legal" notes we can use in this key/mode
-    extended_scale = make_role_scale_for_engine(engine, "bass")
-    
-    # Snap our candidate to the nearest note in the scale
-    # This ensures we're always playing a note that's in the key (diatonic) -> TODO: if not diatonic
+    # Snap candidate into the extended_scale, which is already confined to [low, high].
     bass_root = snap_to_scale(extended_scale, candidate)
 
-    # Calculate the "fifth" (5 scale degrees above root, but in semitones it's +7)
-    # Example: if bass_root is C2, bass_fifth is G2
-    # We use both root and fifth for variety in the bassline
+    # Fifth above the root (7 semitones). This might step outside the octave,
+    # so we'll wrap it back into [low, high] afterward.
     bass_fifth = bass_root + 7
-    
-    # Make sure the fifth stays within the bass register bounds (36-52)
-    # If it's too high, drop it an octave; if too low, raise it an octave
-    low, high = get_role_register("bass")
+
+    # Strictly enforce staying inside this animal's one-octave band:
     while bass_fifth > high:
         bass_fifth -= 12
     while bass_fifth < low:

@@ -5,12 +5,11 @@ from __future__ import annotations
 from typing import List
 import random
 
-from squawkfarm.services.loop_engine import LoopEngine
 from .utils import snap_to_scale
 
 
 def generate_random_harmony(
-    engine: LoopEngine,
+    engine,
     animal_id: str,
 ) -> None:
     """

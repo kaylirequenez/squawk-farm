@@ -14,6 +14,7 @@ from squawkfarm.models.loop import AnimalLoop, GlobalLoopSettings, LoopInstance
 from imslib.clock import AudioScheduler, SimpleTempoMap, kTicksPerQuarter
 from kivy.clock import Clock
 
+from squawkfarm.services.composition.utils import get_animal_octave_range
 from squawkfarm.utils import tune_sample_and_save, tune_to_midi, frame_to_time, time_to_frame, guess_initial_role, get_recording_wav_path
 
 
@@ -561,7 +562,7 @@ class LoopEngine(object):
         self.recording.shift(self.slot_to_frame(num_slots))
 
     # ======================================================================
-    # Call these when user editing global loop grid
+    # Call these on sequencer screen
     # ======================================================================
     def add_loop_to_grid(self, animal_id: str, slot: int, midi: Optional[int] = None) -> None:
         """Adds loop instances at the specified slots."""
@@ -570,19 +571,6 @@ class LoopEngine(object):
     def del_loop_from_grid(self, animal_id: str, slot: int) -> None:
         """Deletes loop instances from the global grid at the specified slots."""
         self.loops.get(animal_id).del_from_grid(slot)
-        
-    def set_role_of_loop(self, animal_id: str, role: str) -> None:
-        """
-        Set the role of an animal loop.
-        Call this when user changes an animal's role.
-        
-        :param animal_id: The animal's unique identifier
-        :param role: "bass", "harmony", "melody", or "percussion"
-        """
-        old_role = self.loops[animal_id].role
-        self._remove_from_role_set(animal_id, old_role)
-        self.loops[animal_id].role = role
-        self._add_to_role_set(animal_id, role)
         
     def clear_loops_from_grid(self, animal_id: str) -> None:
         """Deletes all loop instances from the global grid for the specified animal."""
@@ -593,6 +581,35 @@ class LoopEngine(object):
     def set_pitch_of_loop_instance(self, animal_id: str, start_slot: int, midi: int) -> None:
         """Sets/updates audio file path of loop instance at start_slot."""
         self.loops.get(animal_id).set_pitch(start_slot, midi)
+        
+    def get_animal_role(self, animal_id: str) -> str:
+        """
+        Return the role of an animal loop.
+            "bass", "harmony", "melody", or "percussion"
+        """
+        return self.loops[animal_id].role
+        
+    def set_animal_role(self, animal_id: str, role: str) -> None:
+        """
+        Set the role of an animal loop.
+        Call this when user changes an animal's role.
+        """
+        old_role = self.loops[animal_id].role
+        self._remove_from_role_set(animal_id, old_role)
+        self.loops[animal_id].role = role
+        self._add_to_role_set(animal_id, role)
+        
+    def get_animal_pitch_range(self, animal_id: str) -> tuple[int, int]:
+        """
+        Return (low_midi, high_midi) for this animal.
+        """
+        loop = self.loops.get(animal_id)
+
+        return get_animal_octave_range(
+            base_midi=loop.midi,
+            role=loop.role,
+            global_root=self.get_root(),
+        )
 
     def mute_slots_of_loop_instance(
         self,
