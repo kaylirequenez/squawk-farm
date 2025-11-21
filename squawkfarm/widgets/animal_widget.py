@@ -3,6 +3,7 @@ import random
 from typing import Tuple, Dict, Optional
 
 from kivy.uix.image import Image
+from kivy.uix.button import Button
 from kivy.clock import Clock
 
 from ..models.animal import Animal
@@ -39,6 +40,18 @@ class AnimalWidget(Image):
 
         kwargs.setdefault("size_hint", (None, None))
         super().__init__(**kwargs)
+        
+        # Scale factor for the clickable button (s times larger in both dimensions)
+        self.click_button_scale = 1.5  # Adjust this to change click box size
+        
+        # Create a visible clickable button overlay for debugging (semi-transparent green)
+        self.click_button = Button(
+            size_hint=(None, None),
+            background_color=(0.2, 0.8, 0.2, 0.3),  # Semi-transparent green for debugging
+            background_normal='',
+        )
+        self.click_button.bind(on_press=self._on_click_button_press)
+        
         self.update_from_animal(animal)
 
     def _derive_sprite_paths(self, image_path: str) -> Dict[Tuple[str, str], str]:
@@ -121,6 +134,8 @@ class AnimalWidget(Image):
 
     def on_parent(self, instance, parent):
         if parent is not None:
+            # Add the clickable button to the parent
+            parent.add_widget(self.click_button)
             if self.shadow_image is None:
                 self.shadow_image = Image(size_hint=(None, None))
                 parent.add_widget(self.shadow_image, index=0)
@@ -128,14 +143,37 @@ class AnimalWidget(Image):
                 self._update_shadow_image()
                 self._update_shadow_pos(self.x, self.y)
         else:
-            if self._last_parent is not None and self.shadow_image is not None:
-                try:
-                    self._last_parent.remove_widget(self.shadow_image)
-                except Exception:
-                    pass
-                self.shadow_image = None
+            if self._last_parent is not None:
+                if self.click_button in self._last_parent.children:
+                    try:
+                        self._last_parent.remove_widget(self.click_button)
+                    except Exception:
+                        pass
+                if self.shadow_image is not None:
+                    try:
+                        self._last_parent.remove_widget(self.shadow_image)
+                    except Exception:
+                        pass
+                    self.shadow_image = None
 
         self._last_parent = parent
+    
+    def _on_click_button_press(self, instance):
+        """Handle click button press and call the callback"""
+        if self.on_click_callback:
+            self.on_click_callback(self.animal.animal_id)
+    
+    def move_to(self, pos: Tuple[float, float]):
+        self.pos = pos
+        # Also update the button position (higher up towards the body)
+        if hasattr(self, 'click_button'):
+            base_size = self.animal.size if self.animal.size is not None else (100.0, 100.0)
+            w, h = base_size
+            size_scale = max(1.0, w / 100.0)
+            scaled_w = w * self.click_button_scale * size_scale
+            scaled_h = h * self.click_button_scale * size_scale
+            self.click_button.pos = (pos[0] + (w * 8.0 - scaled_w) / 2, pos[1] + (h * 8.0 - scaled_h) * 0.6)
+        self._update_shadow_pos(*pos)
 
     def update_from_animal(self, animal: Animal):
         self.animal = animal
@@ -145,9 +183,21 @@ class AnimalWidget(Image):
         base_size = animal.size if animal.size is not None else (100.0, 100.0)
         w, h = base_size
         self.size = (w * 8.0, h * 8.0)
+        
+        # Update the clickable button to match the actual animal visual size (not scaled)
+        # Scale it up proportionally to the animal size with a minimum offset
+        # This ensures larger animals get bigger boxes and smaller animals get appropriately sized boxes
+        size_scale = max(1.0, w / 100.0)  # Scale relative to base size, minimum 1.0
+        self.click_button.size = (w * self.click_button_scale * size_scale, h * self.click_button_scale * size_scale)
 
         if animal.pos is not None:
             self.pos = animal.pos
+            # Position the button at the center of the animal, but higher up (towards the body)
+            # Center horizontally and position at 0.6 offset vertically
+            size_scale = max(1.0, w / 100.0)
+            scaled_w = w * self.click_button_scale * size_scale
+            scaled_h = h * self.click_button_scale * size_scale
+            self.click_button.pos = (animal.pos[0] + (w * 8.0 - scaled_w) / 2, animal.pos[1] + (h * 8.0 - scaled_h) * 0.6)
 
         if self.shadow_image is not None:
             self.shadow_image.size = self.size
@@ -187,6 +237,15 @@ class AnimalWidget(Image):
 
         self.shadow_image.size = self.size
         self.shadow_image.pos = (ground_x, ground_y)
+        
+        # Update clickable button position too (higher up towards the body)
+        if hasattr(self, 'click_button'):
+            base_size = self.animal.size if self.animal.size is not None else (100.0, 100.0)
+            w, h = base_size
+            size_scale = max(1.0, w / 100.0)
+            scaled_w = w * self.click_button_scale * size_scale
+            scaled_h = h * self.click_button_scale * size_scale
+            self.click_button.pos = (ground_x + (w * 8.0 - scaled_w) / 2, ground_y + (h * 8.0 - scaled_h) * 0.6)
 
     def _set_facing(self, facing: str):
         if facing not in ("right", "left"):
@@ -222,8 +281,7 @@ class AnimalWidget(Image):
     def move_by(self, dx: float, dy: float):
         x, y = self.pos
         new_pos = (x + dx, y + dy)
-        self.pos = new_pos
-        self._update_shadow_pos(*new_pos)
+        self.move_to(new_pos)
 
     def _start_new_move(self, bounds: Tuple[int, int]):
         width, height = bounds
@@ -339,9 +397,3 @@ class AnimalWidget(Image):
                 self._move_elapsed = 0.0
                 self._segment_count = 1
 
-    def on_touch_down(self, touch):
-        if self.collide_point(*touch.pos):
-            if self.on_click_callback:
-                self.on_click_callback(self.animal.animal_id)
-            return True
-        return super().on_touch_down(touch)

@@ -18,6 +18,7 @@ from kivy.uix.image import Image
 from kivy.uix.button import Button
 from kivy.clock import Clock
 from squawkfarm.utils import get_ui_asset_path, get_recording_wav_path, get_animal_data_dir, get_recordings_dir
+from squawkfarm.widgets.animal_piano import AnimalPiano
 
 
 class LoopEditorScreen(Screen):
@@ -42,6 +43,13 @@ class LoopEditorScreen(Screen):
         self.dragging_marker = None  # None, 'left', or 'right'
         self.drag_start_x = 0
         
+        # Piano note dragging with beat quantization
+        self.dragging_note = None
+        self.drag_start_pos = (0, 0)
+        self.drag_unsnapped_pos = (0, 0)
+        self.last_touch_pos = (0, 0)
+        self.note_touch_tolerance = 15
+        
         # Audio playback
         self.raw_audio_data = None
         self.sample_rate = Audio.sample_rate
@@ -59,18 +67,103 @@ class LoopEditorScreen(Screen):
         self.sample_button.bind(on_press=self._on_sample_press)
         self.add_widget(self.sample_button)
 
+        # Animal piano widget for MIDI piano roll display
+        self.animal_piano = None
+
         # Bind resize
         Window.bind(size=self.on_resize)
 
     def on_enter(self, animal_id: str, num_slots: int):
-        # Store animal information but don't load waveform
+        # Store animal information
+        print(f"=== LoopEditorScreen.on_enter called ===")
+        print(f"animal_id parameter: {animal_id}")
+        print(f"num_slots parameter: {num_slots}")
         self.animal_id = animal_id
         self.num_slots = num_slots
+        print(f"self.animal_id set to: {self.animal_id}")
         self._draw_board_and_horizontal_lines()
+        
+        # Create and populate the MIDI piano roll
+        self._setup_piano_roll()
 
     def on_leave(self, *args):
         # cleanup if needed
         pass
+
+    def _setup_piano_roll(self):
+        """Setup and populate the MIDI piano roll from the animal's loop data."""
+        # Remove existing piano roll if any
+        if self.animal_piano:
+            self.remove_widget(self.animal_piano)
+            self.animal_piano.clear_notes()
+        
+        # Create new piano roll widget
+        self.animal_piano = AnimalPiano()
+        self.add_widget(self.animal_piano)
+        
+        # Get loop engine from globals
+        loop_engine = self.globals.loop_engine
+        
+        # Check if animal has a loop in the engine
+        if self.animal_id not in loop_engine.loops:
+            print(f"ERROR: No loop found for animal {self.animal_id}")
+            print(f"Available animals in loop_engine: {list(loop_engine.loops.keys())}")
+            return
+        
+        # Get the animal's loop data
+        animal_loop = loop_engine.loops[self.animal_id]
+        
+        print(f"\n=== _setup_piano_roll for animal {self.animal_id} ===")
+        print(f"animal_loop has {len(animal_loop.instances)} loop instances")
+        
+        # Calculate grid dimensions
+        width = Window.width
+        margin = width / 15
+        draw_width = width - 2 * margin
+        center_y = Window.height / 2
+        line_spacing = Window.height * 0.05
+        total_beats = 8
+        
+        # Get all loop instances for this animal
+        instance_info = animal_loop.get_loop_instance_info(loop_engine.frame_to_slot)
+        print(f"Found {len(instance_info)} loop instances to display")
+        
+        # Display each loop instance as a rectangle on the grid
+        for start_slot, num_slots, midi in instance_info:
+            # Map beats to sample size based on num_slots
+            ppb = loop_engine.get_slots_per_beat()
+            num_beats = max(1, num_slots / ppb)
+            
+            # Map beats to sample size: small=1 beat, medium=2 beats, large=4 beats
+            if num_beats < 1.5:
+                sample_size = "small"
+            elif num_beats < 3:
+                sample_size = "medium"
+            else:
+                sample_size = "large"
+            
+            # Calculate pixel position from start_slot
+            # start_slot to beat: start_slot / ppb
+            beat_position = start_slot / ppb
+            x = margin + (beat_position / total_beats) * draw_width
+            
+            # Map MIDI to Y position with 8 quantized slots
+            # MIDI values 0-7 represent the 8 notes in an octave (C to B)
+            # 9 lines are at: i - 4 for i in 0-8, creating positions from -4 to +4 line_spacing
+            # 8 slots are positioned at: -3.5, -2.5, -1.5, -0.5, +0.5, +1.5, +2.5, +3.5 line_spacing
+            midi_slot = midi % 8  # Quantize MIDI to 0-7 range
+            slot_offset = 3.5 - midi_slot  # midi_slot 0 at top (+3.5), midi_slot 7 at bottom (-3.5)
+            slot_center_y = center_y + slot_offset * line_spacing
+            # Position note so its center is aligned with the slot center
+            y = slot_center_y - line_spacing / 2
+            
+            # Create note rectangle for this instance
+            note = self.animal_piano.add_note(x, y, sample_size)
+            # Store start_slot and midi on the note for reference
+            note.start_slot = start_slot
+            note.midi = midi
+            
+            print(f"Instance: start_slot={start_slot}, num_slots={num_slots}, num_beats={num_beats:.2f}, midi={midi}, sample_size={sample_size}, x={x:.1f}")
 
     def _load_waveform_points_from_file(self, path, decimation=20):
         try:
@@ -184,10 +277,10 @@ class LoopEditorScreen(Screen):
 
         with self.canvas:
             Color(0, 0.8, 0, 1)  # Green color for horizontal lines
-            # Draw 8 horizontal lines centered in the middle of the screen
-            for i in range(8):
+            # Draw 9 horizontal lines centered in the middle of the screen (for full octave: C to C = 8 semitones + 1)
+            for i in range(9):
                 # Calculate y position for each line, centered around middle of screen
-                y_offset = (i - 3.5) * line_spacing  # Center around line 3.5 for 8 lines
+                y_offset = (i - 4) * line_spacing  # Center around line 4 for 9 lines
                 y = center_y + y_offset
                 Line(points=[margin, y, margin + draw_width, y], width=2)
             
@@ -422,48 +515,100 @@ class LoopEditorScreen(Screen):
                 self._play_event = None
 
     def on_touch_down(self, touch):
-        """Handle touch down on markers"""
-        # Check if touching near left or right marker (within 30 pixels)
-        marker_touch_tolerance = 30
-        
-        if abs(touch.x - self.left_marker_x) < marker_touch_tolerance:
-            self.dragging_marker = 'left'
-            self.drag_start_x = touch.x
-            touch.grab(self)
-            return True
-        elif abs(touch.x - self.right_marker_x) < marker_touch_tolerance:
-            self.dragging_marker = 'right'
-            self.drag_start_x = touch.x
-            touch.grab(self)
-            return True
+        """Handle touch down - check for piano note dragging"""
+        # Check if we're touching a piano note
+        if self.animal_piano and len(self.animal_piano.notes) > 0:
+            for note in self.animal_piano.notes:
+                # Check if touch is within note bounds plus tolerance
+                note_x, note_y = note.pos
+                if (abs(touch.x - (note_x + note.note_width / 2)) <= note.note_width / 2 + self.note_touch_tolerance and
+                    abs(touch.y - (note_y + note.note_height / 2)) <= note.note_height / 2 + self.note_touch_tolerance):
+                    self.dragging_note = note
+                    self.drag_start_pos = note.pos
+                    self.drag_unsnapped_pos = note.pos
+                    self.last_touch_pos = (touch.x, touch.y)
+                    touch.grab(self)
+                    return True
         
         return super(LoopEditorScreen, self).on_touch_down(touch)
 
     def on_touch_move(self, touch):
-        """Handle marker dragging"""
-        if self.dragging_marker and touch.grab_current == self:
-            margin = Window.width / 15
-            draw_width = Window.width - 2 * margin
+        """Handle touch move - drag piano note with smooth movement and beat quantization on release"""
+        if self.dragging_note and touch.grab_current == self:
+            # Calculate grid dimensions
+            width = Window.width
+            margin = width / 15
+            draw_width = width - 2 * margin
+            center_y = Window.height / 2
+            line_spacing = Window.height * 0.05
+            beat_width = draw_width / 8
             
-            # Update marker position
-            if self.dragging_marker == 'left':
-                # Keep left marker within bounds
-                self.left_marker_x = max(margin, min(touch.x, self.right_marker_x - 10))
-            elif self.dragging_marker == 'right':
-                # Keep right marker within bounds
-                self.right_marker_x = max(self.left_marker_x + 10, min(touch.x, margin + draw_width))
+            # Calculate incremental movement
+            last_x, last_y = self.last_touch_pos
+            dx = touch.x - last_x
+            dy = touch.y - last_y
             
-            # Redraw markers
-            self._update_marker_lines()
+            # Update unsnapped position with smooth movement
+            unsnapped_x, unsnapped_y = self.drag_unsnapped_pos
+            new_unsnapped_x = unsnapped_x + dx
+            new_unsnapped_y = unsnapped_y + dy
+            
+            # Apply bounds checking (keep within grid horizontally, within line spacing vertically)
+            new_unsnapped_x = max(margin, min(new_unsnapped_x, margin + draw_width - self.dragging_note.note_width))
+            
+            # Keep Y within the green lines (between top and bottom line spacing limits)
+            min_y = center_y - 3.5 * line_spacing
+            max_y = center_y + 3.5 * line_spacing
+            new_unsnapped_y = max(min_y, min(new_unsnapped_y, max_y - self.dragging_note.note_height))
+            
+            self.drag_unsnapped_pos = (new_unsnapped_x, new_unsnapped_y)
+            
+            # Update note position with smooth unsnapped movement
+            self.dragging_note.set_position(new_unsnapped_x, new_unsnapped_y)
+            
+            # Update last touch position for next frame
+            self.last_touch_pos = (touch.x, touch.y)
+            
             return True
         
         return super(LoopEditorScreen, self).on_touch_move(touch)
 
     def on_touch_up(self, touch):
-        """Handle touch release"""
-        if self.dragging_marker and touch.grab_current == self:
+        """Handle touch release - snap piano note to grid and stop dragging"""
+        if self.dragging_note and touch.grab_current == self:
+            # Quantize to grid on release
+            width = Window.width
+            margin = width / 15
+            draw_width = width - 2 * margin
+            center_y = Window.height / 2
+            line_spacing = Window.height * 0.05
+            beat_width = draw_width / 8
+            
+            note_x, note_y = self.dragging_note.pos
+            
+            # Snap X to beat grid
+            relative_x = note_x - margin
+            snapped_beat = round(relative_x / beat_width)
+            snapped_x = max(margin, min(margin + (snapped_beat * beat_width), margin + draw_width - self.dragging_note.note_width))
+            
+            # Snap Y to MIDI slots (only between the horizontal lines, not on them)
+            # Slots are at half-integer line positions: -3.5, -2.5, -1.5, -0.5, 0.5, 1.5, 2.5, 3.5
+            note_center_y = note_y + line_spacing / 2
+            relative_y = note_center_y - center_y
+            # Find closest slot by converting to half-line units (each slot is 0.5 line_spacing apart)
+            half_lines_away = relative_y / (line_spacing / 2)
+            # Round to nearest integer, then force to odd integer for .5 positions
+            rounded = round(half_lines_away)
+            # If even, shift to nearest odd
+            if rounded % 2 == 0:
+                rounded = rounded + (1 if rounded >= 0 else -1)
+            snapped_half_lines = max(-7, min(7, rounded))  # Clamp to valid slot range (-3.5 to 3.5)
+            snapped_y = center_y + (snapped_half_lines / 2) * line_spacing - line_spacing / 2
+            
+            self.dragging_note.set_position(snapped_x, snapped_y)
+            
             touch.ungrab(self)
-            self.dragging_marker = None
+            self.dragging_note = None
             return True
         
         return super(LoopEditorScreen, self).on_touch_up(touch)
