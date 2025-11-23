@@ -1,7 +1,6 @@
 import os
 import uuid
 import numpy as np
-import soundfile as sf
 
 from kivy.uix.button import Button
 from kivy.uix.spinner import Spinner
@@ -12,6 +11,8 @@ from kivy.clock import Clock
 from imslib.audio import Audio
 from imslib.screen import Screen
 from imslib.writer import AudioWriter
+from imslib.wavesrc import WaveFile, WaveBuffer
+from imslib.wavegen import WaveGenerator
 
 from squawkfarm.services.loop_engine import LoopEngine
 from squawkfarm.ui.loop_grid import LoopGrid
@@ -20,8 +21,9 @@ from squawkfarm.models.animal import Animal
 from squawkfarm.utils import (
     get_recording_wav_path,
     get_animal_data_dir,
+    get_animal_recording_dir,
+    get_metronome_sound_path,
 )
-from squawkfarm.utils import get_animal_recording_dir
 from squawkfarm.services.composition import generate_random_baseline
 
 
@@ -98,6 +100,10 @@ class RecordScreen(Screen):
 
         self.is_recording = False
         self.animal_id = ""
+        
+        # Count-in audio setup
+        self.count_in_generator = None
+        self.count_in_audio = Audio(num_channels=1)  # Separate audio instance for count-in
 
         self.left_marker_line = None
         self.right_marker_line = None
@@ -175,6 +181,10 @@ class RecordScreen(Screen):
         if self.is_recording:
             self.mic.on_update()
             self._update_wave()
+        
+        # Always update count-in audio if a generator is active
+        if self.count_in_audio.generator is not None:
+            self.count_in_audio.on_update()
 
         self.loop_engine.on_update()
 
@@ -213,12 +223,21 @@ class RecordScreen(Screen):
     def _start_recording(self):
         self.samples.clear()
 
+        self._clear_marker_lines()
+        self._set_editing_buttons_visible(False)
+        
+        # Play 4-beat count-in before starting actual recording
+        self.record_btn.text = "Count-in..."
+        count_in_duration = self._play_count_in()
+        
+        # Schedule actual recording to start after count-in finishes
+        Clock.schedule_once(lambda dt: self._begin_actual_recording(), count_in_duration)
+
+    def _begin_actual_recording(self):
+        """Begin the actual recording after count-in completes."""
         self.is_recording = True
         self.writer.start()
         self.record_btn.text = "Recording..."
-
-        self._clear_marker_lines()
-        self._set_editing_buttons_visible(False)
 
         Clock.schedule_once(lambda dt: self._finish_recording(), self.record_duration)
 
@@ -231,6 +250,61 @@ class RecordScreen(Screen):
         self.loop_engine.set_recording(self.animal_id)
         self._draw_margin_markers()
         self._set_editing_buttons_visible(True)
+
+    def _play_count_in(self):
+        """Play 4-beat count-in with speed adjustment for current BPM. Returns duration in seconds."""
+        try:
+            # Load metronome sound
+            wf = WaveFile(get_metronome_sound_path())
+            metronome_data = wf.get_frames(0, wf.end)
+            
+            # Get current BPM and calculate beat duration in seconds (60 / BPM)
+            bpm = self.loop_engine.tempo_map.bpm
+            beat_duration = 60.0 / bpm
+            
+            # Resample metronome to match beat duration
+            metronome_duration = len(metronome_data) / Audio.sample_rate
+            speed_factor = metronome_duration / beat_duration
+            num_output_samples = int(len(metronome_data) / speed_factor)
+            
+            resampled_data = np.interp(
+                np.linspace(0, len(metronome_data) - 1, num_output_samples),
+                np.arange(len(metronome_data)),
+                metronome_data
+            )
+            
+            # Create 4-beat count-in by repeating the metronome click 4 times
+            count_in_data = np.tile(resampled_data, 4)
+            
+            # Create a simple buffer wrapper for the audio data
+            class ArrayBuffer:
+                def __init__(self, data):
+                    self.data = data
+                    self.num_channels = 1
+                
+                def get_frames(self, start_frame, num_frames):
+                    end_frame = min(start_frame + num_frames, len(self.data))
+                    result = self.data[start_frame:end_frame]
+                    if len(result) < num_frames:
+                        result = np.append(result, np.zeros(num_frames - len(result)))
+                    return result
+                
+                def get_num_channels(self):
+                    return self.num_channels
+            
+            # Set up generator for playback
+            buffer = ArrayBuffer(count_in_data)
+            self.count_in_generator = WaveGenerator(buffer, loop=False)
+            self.count_in_generator.set_gain(0.7)
+            self.count_in_audio.set_generator(self.count_in_generator)
+            
+            return beat_duration * 4
+            
+        except Exception as e:
+            print(f"Error playing count-in: {e}")
+            return 0.1
+    
+
 
     def _draw_margin_markers(self):
         self.left_marker_slot = 0

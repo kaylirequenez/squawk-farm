@@ -41,3 +41,9 @@ def get_animal_data_dir(animal_id: str) -> str:
     path = os.path.join(_get_base_dir(), "data", "animals", animal_id)
     os.makedirs(path, exist_ok=True)
     return path
+
+def get_metronome_sound_path() -> str:
+    """
+    Get the absolute path to the metronome sound file.
+    """
+    return os.path.join(_get_base_dir(), "squawkfarm", "Defualt_sounds", "Metronome.wav")

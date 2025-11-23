@@ -165,6 +165,55 @@ class LoopEditorScreen(Screen):
             
             print(f"Instance: start_slot={start_slot}, num_slots={num_slots}, num_beats={num_beats:.2f}, midi={midi}, sample_size={sample_size}, x={x:.1f}")
 
+    def _update_loop_instance(self, note, new_start_slot, new_midi):
+        """Update loop instance in the engine when a note is moved or pitch changed. Returns True if successful."""
+        old_start_slot = note.start_slot
+        old_midi = note.midi
+        
+        # If position hasn't changed, skip the update
+        if old_start_slot == new_start_slot and old_midi == new_midi:
+            return True
+        
+        loop_engine = self.globals.loop_engine
+        animal_loop = loop_engine.loops[self.animal_id]
+        
+        # Check if playback is currently active
+        was_playing = loop_engine.playing
+        playback_start_time = 0
+        if was_playing:
+            # Pause playback before making changes
+            loop_engine.pause()
+        
+        # If only MIDI changed (pitch), update it
+        if old_start_slot == new_start_slot and old_midi != new_midi:
+            animal_loop.set_pitch(old_start_slot, new_midi)
+            note.midi = new_midi
+        # If start_slot changed, we need to move the instance
+        else:
+            if old_start_slot != new_start_slot:
+                # Slide the instance to the new start_slot
+                final_slot = animal_loop.slide(old_start_slot, new_start_slot, frame_to_slot=loop_engine.frame_to_slot)
+                
+                # If slide failed (collision), return False
+                if final_slot != new_start_slot:
+                    # Restart playback if it was playing
+                    if was_playing:
+                        loop_engine.play()
+                    return False
+                
+                note.start_slot = new_start_slot
+            
+            # If MIDI also changed, update the pitch
+            if old_midi != new_midi:
+                animal_loop.set_pitch(new_start_slot, new_midi)
+                note.midi = new_midi
+        
+        # Restart playback if it was playing
+        if was_playing:
+            loop_engine.play()
+        
+        return True
+
     def _load_waveform_points_from_file(self, path, decimation=20):
         try:
             data, sr = sf.read(path)
@@ -515,7 +564,7 @@ class LoopEditorScreen(Screen):
                 self._play_event = None
 
     def on_touch_down(self, touch):
-        """Handle touch down - check for piano note dragging"""
+        """Handle touch down - check for piano note dragging and selection"""
         # Check if we're touching a piano note
         if self.animal_piano and len(self.animal_piano.notes) > 0:
             for note in self.animal_piano.notes:
@@ -523,6 +572,13 @@ class LoopEditorScreen(Screen):
                 note_x, note_y = note.pos
                 if (abs(touch.x - (note_x + note.note_width / 2)) <= note.note_width / 2 + self.note_touch_tolerance and
                     abs(touch.y - (note_y + note.note_height / 2)) <= note.note_height / 2 + self.note_touch_tolerance):
+                    # Handle selection/highlighting
+                    if self.animal_piano.selected_note and self.animal_piano.selected_note != note:
+                        self.animal_piano.selected_note.set_selected(False)
+                    note.set_selected(not note.is_selected)
+                    self.animal_piano.selected_note = note if note.is_selected else None
+                    
+                    # Start dragging
                     self.dragging_note = note
                     self.drag_start_pos = note.pos
                     self.drag_unsnapped_pos = note.pos
@@ -574,7 +630,7 @@ class LoopEditorScreen(Screen):
         return super(LoopEditorScreen, self).on_touch_move(touch)
 
     def on_touch_up(self, touch):
-        """Handle touch release - snap piano note to grid and stop dragging"""
+        """Handle touch release - snap piano note to grid and save changes"""
         if self.dragging_note and touch.grab_current == self:
             # Quantize to grid on release
             width = Window.width
@@ -605,7 +661,23 @@ class LoopEditorScreen(Screen):
             snapped_half_lines = max(-7, min(7, rounded))  # Clamp to valid slot range (-3.5 to 3.5)
             snapped_y = center_y + (snapped_half_lines / 2) * line_spacing - line_spacing / 2
             
-            self.dragging_note.set_position(snapped_x, snapped_y)
+            # Calculate new start_slot and midi from snapped position
+            ppb = self.globals.loop_engine.get_slots_per_beat()
+            new_start_slot = int(snapped_beat * ppb)
+            new_midi = 7 - (snapped_half_lines + 7) // 2  # Convert half-line position to MIDI 0-7
+            
+            # Save original position in case update fails
+            original_x = self.drag_start_pos[0]
+            original_y = self.drag_start_pos[1]
+            
+            # Try to update the loop instance
+            update_success = self._update_loop_instance(self.dragging_note, new_start_slot, new_midi)
+            
+            # If update succeeded, apply the snapped position; otherwise revert to original
+            if update_success:
+                self.dragging_note.set_position(snapped_x, snapped_y)
+            else:
+                self.dragging_note.set_position(original_x, original_y)
             
             touch.ungrab(self)
             self.dragging_note = None

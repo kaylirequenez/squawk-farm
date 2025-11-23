@@ -26,6 +26,8 @@ class AnimalPianoNote(Widget):
         
         self.size_type = size_type
         self.note_color = color
+        self.original_color = color  # Store original color for unhighlighting
+        self.is_selected = False  # Track selection state
         self.rect = None
         
         # Calculate dimensions based on loop editor spacing
@@ -81,6 +83,19 @@ class AnimalPianoNote(Widget):
     def set_color(self, color: Tuple[float, float, float, float]):
         """Change the color of the note."""
         self.note_color = color
+        self.original_color = color  # Update original color when explicitly set
+        self._draw_note()
+    
+    def set_selected(self, selected: bool):
+        """Highlight or unhighlight the note by brightening the color."""
+        self.is_selected = selected
+        if selected:
+            # Brighten the color by increasing all RGB channels
+            r, g, b, a = self.original_color
+            self.note_color = (min(1.0, r + 0.3), min(1.0, g + 0.3), min(1.0, b + 0.3), a)
+        else:
+            # Restore original color
+            self.note_color = self.original_color
         self._draw_note()
 
 
@@ -90,6 +105,7 @@ class AnimalPiano(Widget):
     def __init__(self, **kwargs):
         super(AnimalPiano, self).__init__(**kwargs)
         self.notes: List[AnimalPianoNote] = []
+        self.selected_note: AnimalPianoNote = None  # Track currently selected note
         self.note_colors = {
             "small": (0.8, 0.6, 0.2, 1),    # Orange for small notes
             "medium": (0.6, 0.8, 0.2, 1),   # Green for medium notes  
@@ -114,6 +130,7 @@ class AnimalPiano(Widget):
         
         note = AnimalPianoNote(size_type=size_type, color=color)
         note.set_position(x, y)
+        note.bind(on_touch_down=lambda widget, touch: self._on_note_touch(widget, touch))
         
         self.notes.append(note)
         self.add_widget(note)
@@ -131,6 +148,24 @@ class AnimalPiano(Widget):
         for note in self.notes:
             self.remove_widget(note)
         self.notes.clear()
+        self.selected_note = None
+    
+    def _on_note_touch(self, note: AnimalPianoNote, touch):
+        """Handle note click to select/deselect it."""
+        # Check if touch is within note bounds
+        note_x, note_y = note.pos
+        if (note_x <= touch.x <= note_x + note.note_width and
+            note_y <= touch.y <= note_y + note.note_height):
+            # Deselect previous note if clicking a different one
+            if self.selected_note and self.selected_note != note:
+                self.selected_note.set_selected(False)
+            
+            # Toggle selection of clicked note
+            note.set_selected(not note.is_selected)
+            self.selected_note = note if note.is_selected else None
+            
+            return True
+        return False
     
     def get_notes_at_position(self, x: float, y: float, tolerance: float = 10.0) -> List[AnimalPianoNote]:
         """Get all notes that intersect with the given position within tolerance.
