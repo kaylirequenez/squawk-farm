@@ -29,6 +29,9 @@ class LoopEngine:
     """
 
     def __init__(self, settings: GlobalLoopSettings, animal_loops: Dict[str, AnimalLoop] = {}):
+        # Store settings for access by other components
+        self.settings = settings
+
         # timing
         self.grid = Grid(settings)
 
@@ -47,8 +50,8 @@ class LoopEngine:
             chord_progression=settings.chord_progression,
         )
 
-        # audio manager shares this loops dict
-        self.audio_manager = AudioManager(self.grid, self.loops)
+        # audio manager shares this loops dict and settings
+        self.audio_manager = AudioManager(self.grid, self.loops, self.settings)
 
         # hydrate from existing saved animals
         for animal_id, loop in animal_loops.items():
@@ -329,7 +332,17 @@ class LoopEngine:
     
     def set_volume(self, volume: float) -> None:
         self.audio_manager.set_volume(volume)
-        
+
+    def play_note_preview(self, animal_id: str, start_slot: int) -> None:
+        if animal_id not in self.loops:
+            return
+        loop = self.loops[animal_id]
+        if start_slot not in loop.instances:
+            return
+
+        gen = loop.get_generator(start_slot, frame_offset=0, loop=False)
+        self.audio_manager.mixer.add(gen)
+
     # ======================================================================
     # Composition helpers
     # ======================================================================
@@ -359,8 +372,9 @@ class LoopEngine:
         # 4) actually add loop instances
         loop = self.loops[animal_id]
         for s in start_slots:
-            midi = pitch_by_slot.get(s, loop.midi)  # fallback: base midi
-            loop.add_to_grid(s, self.grid.frame_to_slot, midi)
+            midi = pitch_by_slot.get(s)
+            if midi is not None:
+                loop.add_to_grid(s, self.grid.frame_to_slot, overlap=False, midi=midi)
             
 
     def _generate_pitch_map_for_animal(
@@ -371,31 +385,62 @@ class LoopEngine:
         """
         Decide which MIDI note each generated loop instance should use.
 
+        Uses C pentatonic scale (C, D, E, G, A) starting from the note closest to the animal's base pitch.
+        Adds notes probabilistically based on sample size.
+
         Returns:
             dict mapping start_slot -> midi
         """
+        import random
+
         loop = self.loops[animal_id]
-        role = loop.role
         base_midi = loop.midi  # the "natural" pitch of this animal's recording
 
-        key_mode = self.composer.key_mode # major or minor
-        root = self.composer.root # root MIDI (defaults to the closest C to the first animal loop added)
-        chord_progression = self.composer.chord_progression
-        
-        # if you need to use these ?
-        beats_per_measure = self.grid.get_beats_per_measure()
-        total_measures = self.grid.get_total_measures()
-        
-        # TODO: Maxine, set pitch_map[s] = the midi you decide
-        # below I have the logic to get the corresponding chord at each slot
-        # you can use the key_mode, root, and chord to help decide the pitch
+        # C pentatonic scale intervals (semitones from C)
+        # C=0, D=2, E=4, G=7, A=9
+        pentatonic_intervals = [0, 2, 4, 7, 9]
+
+        # Find the C below the base_midi
+        root_c = self.settings.root
+
+        # Build pentatonic scale notes across multiple octaves (to have range)
+        pentatonic_notes = []
+        for octave_offset in range(-1, 3):  # Cover a good range of octaves
+            for interval in pentatonic_intervals:
+                note = root_c + (octave_offset * 12) + interval
+                if 0 <= note <= 127:  # Valid MIDI range
+                    pentatonic_notes.append(note)
+
+        # Find the closest pentatonic note to base_midi
+        closest_note = min(pentatonic_notes, key=lambda n: abs(n - base_midi))
+        closest_index = pentatonic_notes.index(closest_note)
+
+        # Generate melody with 70% probability per note
+        # The start_slots already represent the rhythm (placed by _generate_rhythm_beats_for_animal)
         pitch_map: dict[int, int | None] = {}
+        current_note_index = closest_index
+
+        # Check if this is the first animal
+        is_first_animal = len(self.loops) == 1
+
         for s in start_slots:
-            beat = self.slot_to_beat(s)
-            measure = int(beat // beats_per_measure)
-            chord = chord_progression.get_chord_at_measure(measure)
-            pitch_map[s] = None
-            
+            # Force first animal to have a note on beat 1 (slot 0)
+            if is_first_animal and s == 0:
+                pitch_map[s] = pentatonic_notes[current_note_index]
+                step = random.choice([-1, 0, 1, 1])
+                current_note_index = max(0, min(len(pentatonic_notes) - 1, current_note_index + step))
+            # 70% chance to add a note at other rhythm points
+            elif random.random() < 0.7:
+                # Add a note from the pentatonic scale
+                pitch_map[s] = pentatonic_notes[current_note_index]
+
+                # Move to next note in scale (with some randomness)
+                step = random.choice([-1, 0, 1, 1])  # Slight bias toward going up
+                current_note_index = max(0, min(len(pentatonic_notes) - 1, current_note_index + step))
+            else:
+                # No note at this rhythm point (30% chance)
+                pitch_map[s] = None
+
         return pitch_map
     
     # Rhythm Generation
@@ -419,17 +464,37 @@ class LoopEngine:
 
         beats_per_measure = self.grid.get_beats_per_measure()
         total_measures = self.grid.get_total_measures()
+        total_beats = beats_per_measure * total_measures
 
         loop_slots = self.grid.frame_to_slot(loop.num_frames)
         loop_beats = self.slot_to_beat(loop_slots)
 
-        return generate_beats(
-            role,
-            loop_beats,
-            beats_per_measure,
-            total_measures,
-            self._get_existing_bass_templates(animal_id),
-        )
+        # Simple placement logic based on note length:
+        # - Short note (< 1.5 beats): place every beat
+        # - Medium note (1.5-3 beats): place every 2 beats
+        # - Long note (>= 3 beats): place every 4 beats
+
+        if loop_beats < 1.5:
+            # Short note: every beat
+            interval = 1
+        elif loop_beats < 3:
+            # Medium note: every 2 beats
+            interval = 2
+        else:
+            # Long note: every 4 beats
+            interval = 4
+
+        # Generate beat positions without overlap
+        beat_starts = []
+        current_beat = 0
+
+        while current_beat < total_beats:
+            # Check if this placement would fit completely
+            if current_beat + loop_beats <= total_beats:
+                beat_starts.append(float(current_beat))
+            current_beat += interval
+
+        return beat_starts
 
     
     # ======================================================================

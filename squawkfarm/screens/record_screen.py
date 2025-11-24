@@ -175,6 +175,15 @@ class RecordScreen(Screen):
         self.canvas.before.clear()
         self.canvas.clear()
 
+        # Add layered backgrounds: lawn.png then board.png on top
+        with self.canvas.before:
+            Color(1, 1, 1, 1)
+            lawn_path = get_ui_asset_path("lawn.png")
+            lawn_tex = Image(source=lawn_path).texture if os.path.exists(lawn_path) else None
+            if lawn_tex:
+                Rectangle(pos=(0, 0), size=Window.size, texture=lawn_tex)
+
+          
         self.grid = LoopGrid(
             total_slots=self.record_slots,
             slots_per_beat=self.loop_engine.get_slots_per_beat(),

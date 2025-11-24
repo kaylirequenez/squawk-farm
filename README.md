@@ -4,53 +4,53 @@
 
 ```
 squawk-farm/
-├── main.py                      # Kivy entrypoint
+├── main.py
 │
-├── squawkfarm/                  # your app code
+├── squawkfarm/
 │   ├── __init__.py
-│   ├── app.py                   # builds Kivy App + ScreenManager (can use imslib)
+│   ├── app.py
 │   │
-│   ├── screens/                 # all UI screens (Kivy Screen subclasses)
+│   ├── screens/
 │   │   ├── __init__.py
-│   │   ├── garden_screen.py     # main "garden" view
-│   │   ├── record_screen.py     # record a new animal sound
-│   │   └── loop_editor_screen.py# edit loops / beat grid
+│   │   ├── garden_screen.py
+│   │   ├── record_screen.py
+│   │   └── loop_editor_screen.py
 │   │
-│   ├── ui/                      # reusable UI widgets
+│   ├── ui/
 │   │   ├── __init__.py
-│   │   └── loop_grid.py         # visual grid for tempo/measure display
+│   │   └── loop_grid.py
 │   │
-│   ├── services/                # app logic (no UI here)
+│   ├── services/
 │   │   ├── __init__.py
-│   │   ├── feature_extract.py   # .wav → animal features
-│   │   ├── animal_gen.py        # features → animal config (can start from assets)
-│   │   ├── loop_engine.py       # global tempo/meter + per-animal loops
-│   │   ├── animation_sync.py    # beat → animation triggers
-│   │   └── save_load.py         # save/load full garden compositions
+│   │   ├── feature_extract.py
+│   │   ├── animal_gen.py
+│   │   ├── loop_engine.py
+│   │   ├── animation_sync.py
+│   │   └── save_load.py
 │   │
-│   ├── models/                  # data structures
+│   ├── models/
 │   │   ├── __init__.py
-│   │   ├── animal.py            # Animal, AnimalAttributes
-│   │   ├── loop.py              # GlobalLoopSettings, AnimalLoop
-│   │   └── project.py           # Project
+│   │   ├── animal.py
+│   │   ├── loop.py
+│   │   └── project.py
 │   │
-│   └── utils/                   # small helpers
+│   └── utils/
 │       ├── __init__.py
-│       ├── audio_utils.py       # load/save wav, paths, normalization
-│       ├── path_utils.py        # construct paths to project assets and data
-│       └── ui_utils.py          # UI helper functions (paths, assets)
+│       ├── audio_utils.py
+│       ├── path_utils.py
+│       └── ui_utils.py
 │
-├── imslib/                      # teacher-provided helper modules
+├── imslib/
 │
-├── assets/                      # things that ship WITH the app 
-│   ├── README.md                
-│   ├── animals/                 # premade/gen-AI animal bases 
-│   ├── audio_presets/           # built-in sounds 
-│   └── ui_images/               # <--- Add this new folder for PNGs           
+├── assets/
+│   ├── README.md
+│   ├── animals/
+│   ├── audio_presets/
+│   └── ui_images/
 │
-└── data/                        # runtime user-generated stuff
-    ├── projects/                # saved garden compositions
-    ├── recordings/              # recorded .wav files from the mic
-    ├── animals/                 # generated animal configs per user sound
-    └── loops/                   # saved loop settings per animal
+└── data/
+    ├── projects/
+    ├── recordings/
+    ├── animals/
+    └── loops/
  ```

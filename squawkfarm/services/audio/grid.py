@@ -66,6 +66,10 @@ class Grid:
     def get_total_slots(self) -> int:
         return self.get_beats() * self.get_slots_per_beat()
 
+    def slot_to_measure(self, slot: int) -> int:
+        slots_per_measure = self.get_beats_per_measure() * self.get_slots_per_beat()
+        return slot // slots_per_measure
+
     def get_total_measures_options(self) -> List[int]:
         return list(range(1, MAX_MEASURES + 1))
 

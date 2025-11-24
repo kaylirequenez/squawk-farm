@@ -4,12 +4,13 @@ from typing import Callable, Dict, Optional, Tuple
 
 from imslib.audio import Audio
 from imslib.mixer import Mixer
-from imslib.wavegen import WaveGenerator
+from imslib.wavegen import WaveGenerator, SpeedModulator
 from imslib.clock import AudioScheduler
 from kivy.clock import Clock
 
 from squawkfarm.services.audio.grid import Grid
 from squawkfarm.models.loop_runtime import Loop, Recording
+from squawkfarm.models.loop import GlobalLoopSettings
 
 # TODO: make it so callbacks must be included for initialization
 class AudioManager:
@@ -24,9 +25,10 @@ class AudioManager:
       - `loops` is a reference to the dict owned by LoopEngine.
       - AudioManager does NOT modify loops; it only reads them to schedule audio.
     """
-    def __init__(self, grid: Grid, loops: Dict[str, Loop]):
+    def __init__(self, grid: Grid, loops: Dict[str, Loop], settings: GlobalLoopSettings):
         self.grid = grid
         self.loops = loops  # shared reference from LoopEngine
+        self.settings = settings  # global settings for key changes
 
         self.scheduler = AudioScheduler(self.grid.tempo_map)
         self.mixer = Mixer()
@@ -41,8 +43,19 @@ class AudioManager:
         self._on_sing: Callable[[str], None] = lambda aid: None
         self._on_close: Callable[[str], None] = lambda aid: None
 
-        # scheduled mouth-close events
-        self.scheduled_close_events: Dict[str, object] = {}
+        # scheduled mouth-close events (can have multiple per animal)
+        self.scheduled_close_events: Dict[str, list] = {}
+
+        self.current_cycle: int = 0
+
+    def get_global_transpose_at_slot(self, slot: int) -> int:
+        if not self.settings.key_change_offsets:
+            return 0
+
+        total_measures = self.grid.get_total_measures()
+        measure = self.grid.slot_to_measure(slot) + (self.current_cycle * total_measures)
+        key_change_index = (measure // self.settings.key_change_interval) % len(self.settings.key_change_offsets)
+        return self.settings.key_change_offsets[key_change_index]
 
     # ------------------------------------------------------------------ #
     # basic control
@@ -73,6 +86,7 @@ class AudioManager:
         Play ALL loops currently in `self.loops`.
         """
         self.playing = True
+        self.current_cycle = 0
         self._schedule_cycle(start_time, repeat)
 
     def pause(self, _tick: Optional[int] = None) -> None:
@@ -84,8 +98,9 @@ class AudioManager:
         self.playing = False
 
         # cancel scheduled mouth-closes
-        for animal_id, event in self.scheduled_close_events.items():
-            Clock.unschedule(event)
+        for animal_id, events in self.scheduled_close_events.items():
+            for event in events:
+                Clock.unschedule(event)
             self._on_close(animal_id)
         self.scheduled_close_events.clear()
 
@@ -142,6 +157,11 @@ class AudioManager:
                         tick += local_tick_offset
 
                 if wave_generator is not None:
+                    transpose_semitones = self.get_global_transpose_at_slot(start_slot)
+                    if transpose_semitones != 0:
+                        speed_multiplier = 2.0 ** (transpose_semitones / 12.0)
+                        wave_generator = SpeedModulator(wave_generator, speed_multiplier)
+
                     self.scheduler.post_at_tick(
                         self._start_section_playback,
                         tick + now,
@@ -150,6 +170,7 @@ class AudioManager:
 
         def callback(_dt):
             if repeat and self.playing:
+                self.current_cycle += 1
                 self._schedule_cycle(0.0, repeat)
             else:
                 self.pause()
@@ -172,9 +193,23 @@ class AudioManager:
         self._on_sing(animal_id)
         duration = self.grid.frame_to_time(loop.get_num_frames(start_slot))
 
+        # Close mouth slightly before the end (90% of duration) so it can reopen for the next note
+        close_duration = duration * 0.9
+
         def close_callback(_dt):
             self._on_close(animal_id)
-            self.scheduled_close_events.pop(animal_id, None)
+            # Remove this specific event from the list
+            if animal_id in self.scheduled_close_events:
+                try:
+                    self.scheduled_close_events[animal_id].remove(event)
+                    if not self.scheduled_close_events[animal_id]:
+                        del self.scheduled_close_events[animal_id]
+                except (ValueError, KeyError):
+                    pass
 
-        event = Clock.schedule_once(close_callback, duration)
-        self.scheduled_close_events[animal_id] = event
+        event = Clock.schedule_once(close_callback, close_duration)
+
+        # Add to list of events for this animal
+        if animal_id not in self.scheduled_close_events:
+            self.scheduled_close_events[animal_id] = []
+        self.scheduled_close_events[animal_id].append(event)

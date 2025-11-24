@@ -34,7 +34,7 @@ class GardenScreen(Screen):
 
         self.farm_path = get_ui_asset_path("lawn.png")
         self.barn_path = get_ui_asset_path("barn4.png")
-        self.woodB_path = get_ui_asset_path("woodB2.png")
+        self.woodB_path = get_ui_asset_path("board.png")
 
         self.bg_image = Image(source=self.farm_path).texture
         self.buttons = {}
@@ -103,6 +103,10 @@ class GardenScreen(Screen):
     def on_key_down(self, keycode, modifiers):
         if keycode[1] == "spacebar":
             self.loop_engine.toggle_play(loop=True)
+
+    def on_enter(self):
+        if self.loop_engine.loops:
+            self.loop_engine.play(start_time=0.0, loop=True)
 
     def on_update(self):
         self.loop_engine.on_update()

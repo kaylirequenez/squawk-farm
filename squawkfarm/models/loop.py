@@ -7,14 +7,17 @@ from squawkfarm.models.progression import ChordProgression
 
 @dataclass
 class GlobalLoopSettings:
-    bpm: int = 100  # tempo
-    measures: int = 2  # measures in the global loop
-    time_sig: Tuple[int, int] = (4, 4)  # time signature (numerator, denominator)
-    
-    key_mode: str = "major" # major or minor
-    root: int = 60  # MIDI note number for root (C4=60)
-    
+    bpm: int = 100
+    measures: int = 2
+    time_sig: Tuple[int, int] = (4, 4)
+
+    key_mode: str = "major"
+    root: int = 60
+
     chord_progression: Optional[ChordProgression] = None
+
+    key_change_offsets: List[int] = field(default_factory=lambda: [0, -3, -5, -2])
+    key_change_interval: int = 4
     
 @dataclass
 class LoopInstance:

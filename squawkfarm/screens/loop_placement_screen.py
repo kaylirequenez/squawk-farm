@@ -1,7 +1,10 @@
+import os
+
 from kivy.uix.button import Button
+from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.core.window import Window
-from kivy.graphics import Rectangle
+from kivy.graphics import Rectangle, Color
 
 from imslib.screen import Screen
 
@@ -64,12 +67,44 @@ class LoopPlacementScreen(Screen):
         )
         self.sample_button.bind(on_press=self._on_sample_press)
 
+        # Add button - creates a new note to drag onto the grid
+        self.add_button = Button(
+            text="Add",
+            size_hint=(None, None),
+            size=(80, 50),
+            pos=(20, Window.height - 60),
+        )
+        self.add_button.bind(on_press=self._on_add_press)
+
+        # Delete button - spawns a hammer for deletion
+        self.delete_button = Button(
+            text="Delete",
+            size_hint=(None, None),
+            size=(80, 50),
+            pos=(110, Window.height - 60),
+        )
+        self.delete_button.bind(on_press=self._on_delete_press)
+
+        # Track if we're adding a new note
+        self._adding_note = False
+        self._new_note = None
+
+        # Track hammer for deletion
+        self._hammer_active = False
+        self._hammer_widget = None
+        self._dragging_hammer = False
+        self._hammer_offset = (0.0, 0.0)
+
     def _add_button_widgets(self):
         self.add_widget(self.sample_button)
+        self.add_widget(self.add_button)
+        self.add_widget(self.delete_button)
         self.add_widget(self.barn_btn)
 
     def _remove_button_widgets(self):
         self.remove_widget(self.sample_button)
+        self.remove_widget(self.add_button)
+        self.remove_widget(self.delete_button)
         self.remove_widget(self.barn_btn)
 
     # ---------------- Lifecycle ---------------- #
@@ -79,6 +114,17 @@ class LoopPlacementScreen(Screen):
         self.canvas.before.clear()
         self.canvas.clear()
 
+        Window.bind(on_key_down=self._on_keyboard_down)
+
+        # Add layered backgrounds: lawn.png then board.png on top
+        with self.canvas.before:
+            Color(1, 1, 1, 1)
+            lawn_path = get_ui_asset_path("lawn.png")
+            lawn_tex = Image(source=lawn_path).texture if os.path.exists(lawn_path) else None
+            if lawn_tex:
+                Rectangle(pos=(0, 0), size=Window.size, texture=lawn_tex)
+
+          
         # Grid behind everything in canvas.before
         self.grid = LoopGrid(
             total_slots=self.loop_engine.get_total_slots(),
@@ -103,6 +149,8 @@ class LoopPlacementScreen(Screen):
 
     def on_resize(self, winsize):
         self.sample_button.pos = (Window.width / 2 - 50, Window.height - 60)
+        self.add_button.pos = (20, Window.height - 60)
+        self.delete_button.pos = (110, Window.height - 60)
         self.barn_btn.size = (Window.width / 8, Window.width / 8)
         self.barn_btn.pos = (Window.width - self.barn_btn.width, 0)
         self.barn_rect.size = self.barn_btn.size
@@ -120,8 +168,30 @@ class LoopPlacementScreen(Screen):
         self.loop_engine.on_update()
 
     def on_exit(self):
+        Window.unbind(on_key_down=self._on_keyboard_down)
+
         self._remove_button_widgets()
         self.loop_engine.pause()
+
+        if self._adding_note and self._new_note:
+            self.piano.remove_note(self._new_note)
+            self._adding_note = False
+            self._new_note = None
+
+        if self._hammer_active and self._hammer_widget:
+            self.remove_widget(self._hammer_widget)
+            self._hammer_active = False
+            self._hammer_widget = None
+
+    def _on_keyboard_down(self, _window, key, *_args):
+        if key == 27:
+            if self._hammer_active and self._hammer_widget:
+                self.remove_widget(self._hammer_widget)
+                self._hammer_active = False
+                self._hammer_widget = None
+                self._dragging_hammer = False
+                return True
+        return False
 
     def _on_barn_press(self, *_):
         self.switch_to("garden")
@@ -129,7 +199,70 @@ class LoopPlacementScreen(Screen):
     def _on_sample_press(self, *_):
         self.loop_engine.pause()
         self.loop_engine.play()
-        
+
+    def _on_add_press(self, *_):
+        """Create a new note rectangle that can be dragged onto the grid."""
+        if self._adding_note:
+            return  # Already adding a note
+
+        # Get loop duration to determine note width
+        loop_slots = self.loop_engine.grid.frame_to_slot(
+            self.loop_engine.loops[self.animal_id].num_frames
+        )
+        width = self.grid.slots_to_pixels(loop_slots)
+        height = self.grid.slot_height()
+
+        # Get base MIDI and place at middle row (row 3-4)
+        base_midi = self.loop_engine.get_base_midi(self.animal_id)
+        key_mode = self.loop_engine.get_key_mode()
+        midi = self.row_to_midi(3, base_midi, key_mode)
+
+        # Create note in the center of the screen
+        x = Window.width / 2 - width / 2
+        y = Window.height / 2 - height / 2
+
+        # Add note with a distinct color to show it's being added
+        note = self.piano.add_note(x=x, y=y, width=width, height=height)
+        note.start_slot = None  # Mark as new (not yet placed)
+        note.midi = midi
+        note.set_color((1.0, 0.5, 0.5, 0.8))  # Red-ish tint to show it's new
+
+        self._adding_note = True
+        self._new_note = note
+        self.piano.set_selected(note)
+
+    def _on_delete_press(self, *_):
+        if self._hammer_active:
+            if self._hammer_widget:
+                self.remove_widget(self._hammer_widget)
+            self._hammer_active = False
+            self._hammer_widget = None
+            return
+
+        hammer_path = get_ui_asset_path("hammer.png")
+        if not os.path.exists(hammer_path):
+            print(f"Warning: hammer.png not found at {hammer_path}")
+            return
+
+        hammer_tex = Image(source=hammer_path).texture
+        hammer_size = 60
+
+        hammer_widget = Widget()
+        hammer_widget.size_hint = (None, None)
+        hammer_widget.size = (hammer_size, hammer_size)
+
+        mouse_pos = Window.mouse_pos
+        hammer_widget.pos = (mouse_pos[0] - hammer_size / 2, mouse_pos[1] - hammer_size / 2)
+
+        with hammer_widget.canvas:
+            Color(1, 1, 1, 1)
+            hammer_widget.rect = Rectangle(pos=hammer_widget.pos, size=hammer_widget.size, texture=hammer_tex)
+
+        self._hammer_widget = hammer_widget
+        self.add_widget(self._hammer_widget)
+        self._hammer_active = True
+        self._dragging_hammer = True
+
         # ---------------- Pitch row helpers ---------------- #
 
     def row_to_midi(self, row: int, base_midi: int, key_mode: str) -> int:
@@ -174,21 +307,40 @@ class LoopPlacementScreen(Screen):
         # ---------------- Dragging ---------------- #
 
     def on_touch_down(self, touch):
-        # Let buttons etc handle it first
         if super().on_touch_down(touch):
             return True
 
-        # Hit-test notes (reverse so topmost wins)
+        if self._hammer_active and self._hammer_widget:
+            hx, hy = self._hammer_widget.pos
+            hw, hh = self._hammer_widget.size
+            hammer_center_x = hx + hw / 2
+            hammer_center_y = hy + hh / 2
+
+            for note in reversed(self.piano.notes):
+                nx, ny = note.pos
+                w, h = note.size
+                if nx <= hammer_center_x <= nx + w and ny <= hammer_center_y <= ny + h:
+                    if note.start_slot is not None:
+                        self.loop_engine.remove_loop_instance(self.animal_id, note.start_slot)
+
+                    self.piano.remove_note(note)
+
+                    if note == self._new_note:
+                        self._adding_note = False
+                        self._new_note = None
+
+                    self._rebuild_piano_from_engine()
+                    return True
+            return True
+
         for note in reversed(self.piano.notes):
             nx, ny = note.pos
             w, h = note.size
             if nx <= touch.x <= nx + w and ny <= touch.y <= ny + h:
                 self._drag_note = note
-                # store offset from note origin to touch point
                 self._drag_offset = (touch.x - nx, touch.y - ny)
                 self._drag_note_start_slot = getattr(note, "start_slot", None)
 
-                # simple selection
                 self.piano.set_selected(note)
                 return True
 
@@ -196,6 +348,14 @@ class LoopPlacementScreen(Screen):
 
 
     def on_touch_move(self, touch):
+        if self._hammer_active and self._hammer_widget:
+            hammer_size = self._hammer_widget.size[0]
+            new_x = touch.x - hammer_size / 2
+            new_y = touch.y - hammer_size / 2
+            self._hammer_widget.pos = (new_x, new_y)
+            self._hammer_widget.rect.pos = (new_x, new_y)
+            return True
+
         if not self._drag_note:
             return super().on_touch_move(touch)
 
@@ -216,6 +376,9 @@ class LoopPlacementScreen(Screen):
 
 
     def on_touch_up(self, touch):
+        if self._hammer_active:
+            return True
+
         if not self._drag_note:
             return super().on_touch_up(touch)
 
@@ -228,7 +391,36 @@ class LoopPlacementScreen(Screen):
         column = self.grid.x_to_slot_index(note.pos[0])
         row = self.grid.y_to_slot_index(note.pos[1])
 
-        # move instance in engine (no overlap)
+        # Calculate final MIDI from row
+        final_midi = self.row_to_midi(
+            row,
+            self.loop_engine.get_base_midi(self.animal_id),
+            self.loop_engine.get_key_mode(),
+        )
+
+        # If this is a new note being added
+        if old_start_slot is None:
+            # Try to add it to the grid
+            success = self.loop_engine.add_loop_instance(
+                self.animal_id,
+                column,
+                overlap=False,
+                midi=final_midi
+            )
+
+            if success:
+                self._adding_note = False
+                self._new_note = None
+                self._rebuild_piano_from_engine()
+                self.loop_engine.play_note_preview(self.animal_id, column)
+            else:
+                self.piano.remove_note(note)
+                self._adding_note = False
+                self._new_note = None
+                self._rebuild_piano_from_engine()
+
+            return True
+
         final_column = self.loop_engine.slide_instance(
             self.animal_id,
             old_start_slot,
@@ -237,16 +429,10 @@ class LoopPlacementScreen(Screen):
         )
         note.start_slot = final_column
 
-        # update pitch from row
-        final_midi = self.row_to_midi(
-            row,
-            self.loop_engine.get_base_midi(self.animal_id),
-            self.loop_engine.get_key_mode(),
-        )
         self.loop_engine.set_pitch_of_instance(self.animal_id, final_column, final_midi)
 
-        # rebuild for full sync
         self._rebuild_piano_from_engine()
+        self.loop_engine.play_note_preview(self.animal_id, final_column)
         return True
 
 

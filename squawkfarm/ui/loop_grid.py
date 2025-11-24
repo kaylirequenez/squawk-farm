@@ -27,7 +27,7 @@ class LoopGrid(InstructionGroup):
         self.x = self.x_margin
         self.y = self.y_margin
 
-        self.bg_texture = Image(source=get_ui_asset_path("woodB2.png")).texture
+        self.bg_texture = Image(source=get_ui_asset_path("board.png")).texture
 
         # TODO: make this loop nicer
         self.marker_styles = {
@@ -94,9 +94,11 @@ class LoopGrid(InstructionGroup):
         return self.x + slot_index * self.slot_width()
 
     def x_to_slot_index(self, x: float) -> int:
-        """Convert an x pixel coordinate to nearest slot index."""
         rel_x = x - self.x
-        return int(round(rel_x / self.slot_width()))
+        slot_index = rel_x / self.slot_width()
+        half_beat_slots = self.slots_per_beat // 2
+        snapped_index = round(slot_index / half_beat_slots) * half_beat_slots
+        return int(snapped_index)
 
     def slots_to_pixels(self, slots: int) -> float:
         return slots * self.slot_width()
