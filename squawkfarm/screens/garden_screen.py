@@ -1,12 +1,8 @@
 """Garden (main) screen for squawk-farm."""
-import os
 import random
-import numpy as np
-from datetime import datetime
-
 from imslib.screen import Screen
 from kivy.core.window import Window
-from kivy.graphics import Rectangle, Color, Line
+from kivy.graphics import Rectangle
 from kivy.uix.image import Image
 from kivy.uix.button import Button
 from kivy.graphics.opengl import (
@@ -93,8 +89,6 @@ class GardenScreen(Screen):
             self.add_widget(widget)
         else:
             widget.update_from_animal(animal)
-            
-        self.loop_engine.add_loop_to_grid(animal.animal_id, 0)
 
     def on_sing(self, animal_id: str):
         widget = self.animal_widgets.get(animal_id)

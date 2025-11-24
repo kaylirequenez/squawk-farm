@@ -24,7 +24,7 @@ from squawkfarm.utils import (
     get_animal_recording_dir,
     get_metronome_sound_path,
 )
-from squawkfarm.services.composition import generate_random_baseline
+from squawkfarm.utils import get_animal_recording_dir
 
 
 class RecordScreen(Screen):
@@ -34,9 +34,9 @@ class RecordScreen(Screen):
         super(RecordScreen, self).__init__(**kwargs)
         self.loop_engine: LoopEngine = Screen.globals.loop_engine
 
-        self.window_slots = self.loop_engine.get_recording_slots(1)
+        self.window_slots = self.loop_engine.beat_to_slot(1)
         self.record_slots = self.window_slots * 8
-        self.record_duration = self.loop_engine.get_time_from_slots(self.record_slots)
+        self.record_duration = self.loop_engine.slot_to_time(self.record_slots)
 
         def listen_func(data, num_channels):
             self.writer.add_audio(data, num_channels)
@@ -76,9 +76,9 @@ class RecordScreen(Screen):
         
         # Sample size options with corresponding pulse/beat multipliers
         self.sample_sizes = {
-            "Small": 1,    # 1 pulse/beat length
-            "Medium": 2,   # 2 pulse lengths  
-            "Large": 4     # 4 pulse lengths
+            "Small": 1,    # 1 beat
+            "Medium": 2,   # 2 beats  
+            "Large": 4     # 4 beats
         }
         self.current_sample_size = "Medium"  # Default selection
         
@@ -109,8 +109,6 @@ class RecordScreen(Screen):
         self.right_marker_line = None
         self.left_marker_x = 0
         self.right_marker_x = Window.width
-        self.left_marker_slot = 0
-        self.right_marker_slot = self.record_slots
         self.dragging_marker = None
 
     def _set_editing_buttons_visible(self, visible: bool):
@@ -148,16 +146,11 @@ class RecordScreen(Screen):
                 pass
             self.right_marker_line = None
 
-        self.left_marker_x = 0
-        self.right_marker_x = Window.width
-        self.left_marker_slot = 0
-        self.right_marker_slot = self.record_slots
         self.dragging_marker = None
 
     def on_enter(self, *_):
         self.animal_id = str(uuid.uuid4())
         self.writer = AudioWriter(get_animal_recording_dir(self.animal_id), num_channels=1)
-        # self._clear_marker_lines()
 
         self.canvas.before.clear()
         self.canvas.clear()
@@ -176,6 +169,7 @@ class RecordScreen(Screen):
             )
 
         self._add_button_widgets()
+        self._update_sample_pixels()
 
     def on_update(self):
         if self.is_recording:
@@ -212,13 +206,32 @@ class RecordScreen(Screen):
             self._start_recording()
 
     def _on_sample_press(self, *_):
-        self.loop_engine.play_recording()
+        self.loop_engine.toggle_play_recording_preview()
+        
+    def _update_sample_pixels(self):
+        num_beats = self.sample_sizes[self.current_sample_size]
+        sample_slots = self.loop_engine.beat_to_slot(num_beats)
+        self.sample_pixels = self.grid.slots_to_pixels(sample_slots)
         
     def _on_sample_size_change(self, spinner, text):
         """Handle sample size dropdown selection change."""
         self.current_sample_size = text
-        # Update the markers based on the new sample size
-        self._update_markers_for_sample_size()
+        self._update_sample_pixels()
+        
+        if self.loop_engine.recording is None:
+            return
+
+        # Set right marker based on left marker and sample_pixels
+        self.right_marker_x = self.left_marker_x + self.sample_pixels
+
+        # If right marker exceeds window, shift both left by the overflow
+        overflow = self.right_marker_x - Window.width
+        if overflow > 0:
+            self.left_marker_x -= overflow
+            self.right_marker_x -= overflow
+
+        self._update_marker_lines()
+        self._update_recording_margins()
 
     def _start_recording(self):
         self.samples.clear()
@@ -249,7 +262,18 @@ class RecordScreen(Screen):
 
         self.loop_engine.set_recording(self.animal_id)
         self._draw_margin_markers()
+        self._update_recording_margins()
         self._set_editing_buttons_visible(True)
+        
+    def _update_recording_margins(self):
+        """Update loop engine margins based on current marker positions."""
+        self.loop_engine.set_left_margin_of_recording(self.left_marker_x / Window.width)
+        self.loop_engine.set_right_margin_of_recording(self.right_marker_x / Window.width)
+        
+    def _update_recording_margins(self):
+        """Update loop engine margins based on current marker positions."""
+        self.loop_engine.set_left_margin_of_recording(self.left_marker_x / Window.width)
+        self.loop_engine.set_right_margin_of_recording(self.right_marker_x / Window.width)
 
     def _play_count_in(self):
         """Play 4-beat count-in with speed adjustment for current BPM. Returns duration in seconds."""
@@ -259,8 +283,7 @@ class RecordScreen(Screen):
             metronome_data = wf.get_frames(0, wf.end)
             
             # Get current BPM and calculate beat duration in seconds (60 / BPM)
-            bpm = self.loop_engine.tempo_map.bpm
-            beat_duration = 60.0 / bpm
+            beat_duration = self.loop_engine.slot_to_time(self.loop_engine.beat_to_slot(1))
             
             # Resample metronome to match beat duration
             metronome_duration = len(metronome_data) / Audio.sample_rate
@@ -307,14 +330,9 @@ class RecordScreen(Screen):
 
 
     def _draw_margin_markers(self):
-        self.left_marker_slot = 0
-        # Set right marker based on current sample size
-        sample_multiplier = self.sample_sizes[self.current_sample_size]
-        sample_slots = self.window_slots * sample_multiplier
-        self.right_marker_slot = min(sample_slots, self.record_slots)
-
-        self.left_marker_x = self.grid.get_x_from_slot(self.left_marker_slot)
-        self.right_marker_x = self.grid.get_x_from_slot(self.right_marker_slot)
+        # Center the sample window in the grid
+        self.left_marker_x = Window.width / 2 - self.sample_pixels / 2
+        self.right_marker_x = Window.width / 2 + self.sample_pixels / 2
 
         self.canvas.after.add(Color(1, 0, 0, 1))
         self.left_marker_line = Line(
@@ -328,33 +346,6 @@ class RecordScreen(Screen):
             width=3,
         )
         self.canvas.after.add(self.right_marker_line)
-
-        self.loop_engine.set_left_margin_of_recording(self.left_marker_slot)
-        self.loop_engine.set_right_margin_of_recording(self.right_marker_slot)
-        
-    def _update_markers_for_sample_size(self):
-        """Update marker positions based on current sample size selection."""
-        if not hasattr(self, 'grid') or self.grid is None:
-            return
-            
-        sample_multiplier = self.sample_sizes[self.current_sample_size]
-        # Calculate the number of slots for this sample size
-        sample_slots = self.window_slots * sample_multiplier
-        
-        # Keep left marker at current position, adjust right marker
-        self.right_marker_slot = min(
-            self.left_marker_slot + sample_slots,
-            self.record_slots
-        )
-        
-        # Update visual positions
-        self.left_marker_x = self.grid.get_x_from_slot(self.left_marker_slot)
-        self.right_marker_x = self.grid.get_x_from_slot(self.right_marker_slot)
-        self._update_marker_lines()
-        
-        # Update loop engine
-        self.loop_engine.set_left_margin_of_recording(self.left_marker_slot)
-        self.loop_engine.set_right_margin_of_recording(self.right_marker_slot)
 
     def _update_marker_lines(self):
         if not self.left_marker_line or not self.right_marker_line:
@@ -392,15 +383,9 @@ class RecordScreen(Screen):
 
     def on_touch_move(self, touch):
         if self.dragging_marker and touch.grab_current == self:
+            marker_distance = self.right_marker_x - self.left_marker_x
             if self.dragging_marker == "left":
-                # Calculate the current distance between markers
-                marker_distance = self.right_marker_x - self.left_marker_x
-                
-                # Move left marker to touch position with boundary constraints
-                sample_multiplier = self.sample_sizes[self.current_sample_size]
-                sample_slots = self.window_slots * sample_multiplier
-                max_left_x = self.grid.get_x_from_slot(self.record_slots - sample_slots)
-                
+                max_left_x = Window.width - self.sample_pixels
                 new_left_x = max(0, min(touch.x, max_left_x))
                 
                 # Move right marker by the same amount to maintain exact distance
@@ -408,14 +393,7 @@ class RecordScreen(Screen):
                 self.right_marker_x = new_left_x + marker_distance
                 
             elif self.dragging_marker == "right":
-                # Calculate the current distance between markers
-                marker_distance = self.right_marker_x - self.left_marker_x
-                
-                # Move right marker to touch position with boundary constraints
-                min_right_x = marker_distance  # Minimum distance from left edge
-                max_right_x = self.grid.get_x_from_slot(self.record_slots)
-                
-                new_right_x = max(min_right_x, min(touch.x, max_right_x))
+                new_right_x = max(self.sample_pixels, min(touch.x, Window.width))
                 
                 # Move left marker by the same amount to maintain exact distance
                 self.right_marker_x = new_right_x
@@ -429,14 +407,8 @@ class RecordScreen(Screen):
     def on_touch_up(self, touch):
         if self.dragging_marker and touch.grab_current == self:
             touch.ungrab(self)
-
-            # Convert current marker positions back to slots (without snapping)
-            self.left_marker_slot = self.grid.get_slot_from_x(self.left_marker_x)
-            self.right_marker_slot = self.grid.get_slot_from_x(self.right_marker_x)
             
-            # Update loop engine with the current positions
-            self.loop_engine.set_left_margin_of_recording(self.left_marker_slot)
-            self.loop_engine.set_right_margin_of_recording(self.right_marker_slot)
+            self._update_recording_margins()
 
             self.dragging_marker = None
             return True
@@ -444,17 +416,9 @@ class RecordScreen(Screen):
         return super(RecordScreen, self).on_touch_up(touch)
 
     def _add_animal(self, *_):
-        self.loop_engine.add_animal_loop(self.animal_id)
+        self.loop_engine.finalize_animal_loop(self.animal_id)
         
-        # TODO: Get the actual role of this animal from loop_engine
-        # and call the appropriate generation function:
-        # - generate_random_baseline() for "bass"
-        # - generate_random_harmony() for "harmony"
-        # - generate_random_melody() for "melody"
-        # - generate_random_percussion() for "percussion" 
-        
-        # For now, we assume bass role and generate a baseline
-        generate_random_baseline(self.loop_engine, self.animal_id)
+        self.loop_engine.auto_generate_for_animal(self.animal_id)
         
         wav_path = get_recording_wav_path(self.animal_id, "tuned")
         out_dir = get_animal_data_dir(self.animal_id)

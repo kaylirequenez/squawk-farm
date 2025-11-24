@@ -67,13 +67,6 @@ class LoopGrid(InstructionGroup):
         self._draw_background()
         self._draw_grid()
 
-    def get_slot_from_x(self, x_coord: float) -> int:
-        if x_coord <= self.x: return 0
-        if x_coord >= self.x + self.width: return self.total_slots - 1
+    def slots_to_pixels(self, slots: int) -> float:
         slot_w = self.width / float(self.total_slots)
-        slot = round((x_coord - self.x) / slot_w)
-        return max(0, min(slot, self.total_slots))
-
-    def get_x_from_slot(self, slot: int) -> float:
-        slot_w = self.width / float(self.total_slots)
-        return self.x + slot * slot_w
+        return slots * slot_w

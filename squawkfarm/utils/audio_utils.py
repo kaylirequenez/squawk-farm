@@ -5,15 +5,6 @@ from imslib.audio import Audio
 from imslib.writer import write_wave_file
 from squawkfarm.utils.path_utils import get_recording_wav_path
 
-def frame_to_time(frame: int) -> float:
-    """Convert frame index to time in seconds."""
-    return frame / Audio.sample_rate
-
-def time_to_frame(time: float) -> int:
-    """Convert time in seconds to frame index."""
-    return int(time * Audio.sample_rate)
-
-
 def _estimate_f0_median(y: np.ndarray, sr: int) -> float:
     """Estimate the median fundamental frequency of voiced audio."""
     f0 = librosa.yin(
@@ -71,45 +62,5 @@ def tune_to_midi(data: np.ndarray, base_midi: int, target_midi: int) -> np.ndarr
         y_shifted = librosa.effects.pitch_shift(data, sr=Audio.sample_rate, n_steps=semitones)
     
     return y_shifted
-
-
-def guess_role_from_pitch(animal_midi: int, root_midi: int = 60) -> str:
-    """
-    Guess the role of an animal based on its pitch relative to the root note.
-    
-    :param animal_midi: The MIDI note of the animal's audio.
-    :param root_midi: The root MIDI note of the key (default: C4 = 60).
-    :returns: "bass", "harmony", or "melody".
-    """
-    offset = animal_midi - root_midi  # in semitones
-
-    if offset <= -5:    # more than a fourth below root
-        return "bass"
-    elif offset >= 7:   # a fifth or more above root
-        return "melody"
-    else:
-        return "harmony"
-
-
-def guess_initial_role(
-    animal_midi: int,
-    root_midi: int = 60,
-    beats: int = 4,
-) -> str:
-    """
-    Guess an initial role for an animal using both pitch and loop length.
-
-    Rules:
-    - If the loop is very short (1 beat), we *assume* it is likely percussive
-      or a short stab, and default to "percussion".
-    - Otherwise, we use pitch-based guessing to choose between
-      "bass", "harmony", and "melody".
-    """
-    # Treat 1-beat (or less if changed in future) samples as likely percussion by default.
-    if beats <= 1:
-        return "percussion"
-
-    # For 2 or 4 beats, fall back to pitch-based roles.
-    return guess_role_from_pitch(animal_midi, root_midi)
 
 

@@ -25,5 +25,3 @@ def build_app():
     sm.add_screen(LoopEditorScreen(name="loop"))
     sm.add_screen(LoopPlacementScreen(name="loop_placement"))
     return sm
-
-# I want to make this function such that it gets the loop corresponding to animal id & calls get_num_slots & then uses the total number of slots & possibly the time signature etc. to created 
