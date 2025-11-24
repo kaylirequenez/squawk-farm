@@ -67,6 +67,23 @@ class LoopPlacementScreen(Screen):
         )
         self.sample_button.bind(on_press=self._on_sample_press)
 
+        # Octave shift buttons
+        self.octave_up_button = Button(
+            text="+",
+            size_hint=(None, None),
+            size=(50, 50),
+            pos=(Window.width / 2 + 60, Window.height - 60),
+        )
+        self.octave_up_button.bind(on_press=self._on_octave_up_press)
+
+        self.octave_down_button = Button(
+            text="-",
+            size_hint=(None, None),
+            size=(50, 50),
+            pos=(Window.width / 2 - 110, Window.height - 60),
+        )
+        self.octave_down_button.bind(on_press=self._on_octave_down_press)
+
         # Add button - creates a new note to drag onto the grid
         self.add_button = Button(
             text="Add",
@@ -97,12 +114,16 @@ class LoopPlacementScreen(Screen):
 
     def _add_button_widgets(self):
         self.add_widget(self.sample_button)
+        self.add_widget(self.octave_up_button)
+        self.add_widget(self.octave_down_button)
         self.add_widget(self.add_button)
         self.add_widget(self.delete_button)
         self.add_widget(self.barn_btn)
 
     def _remove_button_widgets(self):
         self.remove_widget(self.sample_button)
+        self.remove_widget(self.octave_up_button)
+        self.remove_widget(self.octave_down_button)
         self.remove_widget(self.add_button)
         self.remove_widget(self.delete_button)
         self.remove_widget(self.barn_btn)
@@ -149,6 +170,8 @@ class LoopPlacementScreen(Screen):
 
     def on_resize(self, winsize):
         self.sample_button.pos = (Window.width / 2 - 50, Window.height - 60)
+        self.octave_up_button.pos = (Window.width / 2 + 60, Window.height - 60)
+        self.octave_down_button.pos = (Window.width / 2 - 110, Window.height - 60)
         self.add_button.pos = (20, Window.height - 60)
         self.delete_button.pos = (110, Window.height - 60)
         self.barn_btn.size = (Window.width / 8, Window.width / 8)
@@ -198,7 +221,21 @@ class LoopPlacementScreen(Screen):
 
     def _on_sample_press(self, *_):
         self.loop_engine.pause()
-        self.loop_engine.play()
+        self.loop_engine.play(animal_id=self.animal_id)
+
+    def _on_octave_up_press(self, *_):
+        """Shift all notes up by one octave and play the sequence."""
+        self.loop_engine.shift_animal_octave(self.animal_id, 12)
+        self._rebuild_piano_from_engine()
+        self.loop_engine.pause()
+        self.loop_engine.play(animal_id=self.animal_id)
+
+    def _on_octave_down_press(self, *_):
+        """Shift all notes down by one octave and play the sequence."""
+        self.loop_engine.shift_animal_octave(self.animal_id, -12)
+        self._rebuild_piano_from_engine()
+        self.loop_engine.pause()
+        self.loop_engine.play(animal_id=self.animal_id)
 
     def _on_add_press(self, *_):
         """Create a new note rectangle that can be dragged onto the grid."""

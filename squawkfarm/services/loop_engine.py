@@ -280,6 +280,22 @@ class LoopEngine:
         loop = self.loops[animal_id]
         loop.set_pitch(start_slot, midi)
 
+    def shift_animal_octave(self, animal_id: str, semitones: int) -> None:
+        """Shift all instances of an animal by the given number of semitones (12 = octave)."""
+        loop = self.loops.get(animal_id)
+        if not loop:
+            return
+
+        # Shift the base MIDI so visual positions stay the same (mod 8)
+        loop.midi = max(0, min(127, loop.midi + semitones))
+
+        # Shift all instance pitches
+        for start_slot in list(loop.instances.keys()):
+            instance = loop.instances[start_slot]
+            new_midi = instance.midi + semitones
+            new_midi = max(0, min(127, new_midi))
+            loop.set_pitch(start_slot, new_midi)
+
     def mute_instance_slots(self, animal_id: str, start_slot: int, slot_1: int, slot_2: int, mute: bool) -> None:
         loop = self.loops[animal_id]
         frame_1 = self.grid.slot_to_frame(slot_1)
@@ -307,8 +323,9 @@ class LoopEngine:
     def on_update(self) -> None:
         self.audio_manager.on_update()
 
-    def play(self, start_time: float = 0.0, loop: bool = False) -> None:
-        self.audio_manager.play(start_time, loop)
+    def play(self, start_time: float = 0.0, loop: bool = False, animal_id: Optional[str] = None) -> None:
+        """Play all loops or a specific animal's loop if animal_id is provided."""
+        self.audio_manager.play(start_time, loop, animal_id)
 
     def pause(self) -> None:
         self.audio_manager.pause()

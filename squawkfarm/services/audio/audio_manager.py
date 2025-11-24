@@ -4,13 +4,14 @@ from typing import Callable, Dict, Optional, Tuple
 
 from imslib.audio import Audio
 from imslib.mixer import Mixer
-from imslib.wavegen import WaveGenerator, SpeedModulator
+from imslib.wavegen import WaveGenerator
 from imslib.clock import AudioScheduler
 from kivy.clock import Clock
 
 from squawkfarm.services.audio.grid import Grid
-from squawkfarm.models.loop_runtime import Loop, Recording
+from squawkfarm.models.loop_runtime import Loop, Recording, RuntimeLoopInstance
 from squawkfarm.models.loop import GlobalLoopSettings
+from squawkfarm.utils import tune_to_midi
 
 # TODO: make it so callbacks must be included for initialization
 class AudioManager:
@@ -81,13 +82,14 @@ class AudioManager:
     # loop playback
     # ------------------------------------------------------------------ #
 
-    def play(self, start_time: float = 0.0, repeat: bool = False) -> None:
+    def play(self, start_time: float = 0.0, repeat: bool = False, animal_id: Optional[str] = None) -> None:
         """
-        Play ALL loops currently in `self.loops`.
+        Play loops. If animal_id is provided, play only that animal's loop.
+        Otherwise, play ALL loops currently in `self.loops`.
         """
         self.playing = True
         self.current_cycle = 0
-        self._schedule_cycle(start_time, repeat)
+        self._schedule_cycle(start_time, repeat, animal_id)
 
     def pause(self, _tick: Optional[int] = None) -> None:
         """
@@ -134,44 +136,45 @@ class AudioManager:
     # internal scheduling for loops
     # ------------------------------------------------------------------ #
 
-    def _schedule_cycle(self, start_time: float, repeat: bool) -> None:
+    def _schedule_cycle(self, start_time: float, repeat: bool, filter_animal_id: Optional[str] = None) -> None:
         now = self.scheduler.get_tick()
         loop_ticks = self.grid.slot_to_tick(self.grid.get_total_slots())
         tick_offset = self.grid.time_to_tick(start_time)
 
-        for animal_id, loop in self.loops.items():
+        # Filter loops if animal_id is specified
+        loops_to_play = {filter_animal_id: self.loops[filter_animal_id]} if filter_animal_id and filter_animal_id in self.loops else self.loops
+
+        for animal_id, loop in loops_to_play.items():
             for start_slot, num_slots, _ in loop.get_instances_info(self.grid.frame_to_slot):
                 wave_generator: Optional[WaveGenerator] = None
                 tick = self.grid.slot_to_tick(start_slot)
+                frame_offset = 0
 
                 if tick >= tick_offset:
-                    wave_generator = loop.get_generator(start_slot)
+                    frame_offset = 0
                 else:
                     end_tick = tick + self.grid.slot_to_tick(num_slots)
                     if end_tick > tick_offset:
                         local_tick_offset = tick_offset - tick
-                        local_frame_offset = self.grid.tick_to_frame(
+                        frame_offset = self.grid.tick_to_frame(
                             self.grid.tick_to_time(local_tick_offset)
                         )
-                        wave_generator = loop.get_generator(start_slot, local_frame_offset)
                         tick += local_tick_offset
+                    else:
+                        continue
 
-                if wave_generator is not None:
-                    transpose_semitones = self.get_global_transpose_at_slot(start_slot)
-                    if transpose_semitones != 0:
-                        speed_multiplier = 2.0 ** (transpose_semitones / 12.0)
-                        wave_generator = SpeedModulator(wave_generator, speed_multiplier)
+                transpose_semitones = self.get_global_transpose_at_slot(start_slot)
 
-                    self.scheduler.post_at_tick(
-                        self._start_section_playback,
-                        tick + now,
-                        (animal_id, start_slot, wave_generator),
-                    )
+                self.scheduler.post_at_tick(
+                    self._start_section_playback,
+                    tick + now,
+                    (animal_id, start_slot, frame_offset, transpose_semitones),
+                )
 
         def callback(_dt):
             if repeat and self.playing:
                 self.current_cycle += 1
-                self._schedule_cycle(0.0, repeat)
+                self._schedule_cycle(0.0, repeat, filter_animal_id)
             else:
                 self.pause()
 
@@ -180,25 +183,36 @@ class AudioManager:
             loop_ticks - tick_offset + now,
         )
 
-    # TODO: make not tuple
-    def _start_section_playback(self, _: int, args: Tuple[str, int, WaveGenerator]) -> None:
-        animal_id, start_slot, gen = args
+    def _start_section_playback(self, _: int, args: Tuple[str, int, int, int]) -> None:
+        animal_id, start_slot, frame_offset, transpose_semitones = args
 
         loop = self.loops.get(animal_id)
-        if not loop or not start_slot in loop.instances:
+        if not loop or start_slot not in loop.instances:
             return
 
+        instance = loop.instances[start_slot]
+
+        if transpose_semitones != 0:
+            current_midi = instance.midi
+            target_midi = current_midi + transpose_semitones
+            transposed_data = tune_to_midi(instance.clean_data, current_midi, target_midi)
+            temp_instance = RuntimeLoopInstance(transposed_data, target_midi, instance.muted_ranges)
+            gen = WaveGenerator(temp_instance, False)
+        else:
+            gen = loop.get_generator(start_slot, frame_offset, False)
+            frame_offset = 0
+
+        gen.frame = frame_offset
+        gen.set_gain(loop.volume)
         self.mixer.add(gen)
 
         self._on_sing(animal_id)
         duration = self.grid.frame_to_time(loop.get_num_frames(start_slot))
 
-        # Close mouth slightly before the end (90% of duration) so it can reopen for the next note
         close_duration = duration * 0.9
 
         def close_callback(_dt):
             self._on_close(animal_id)
-            # Remove this specific event from the list
             if animal_id in self.scheduled_close_events:
                 try:
                     self.scheduled_close_events[animal_id].remove(event)
@@ -209,7 +223,6 @@ class AudioManager:
 
         event = Clock.schedule_once(close_callback, close_duration)
 
-        # Add to list of events for this animal
         if animal_id not in self.scheduled_close_events:
             self.scheduled_close_events[animal_id] = []
         self.scheduled_close_events[animal_id].append(event)

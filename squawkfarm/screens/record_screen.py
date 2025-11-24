@@ -112,9 +112,13 @@ class RecordScreen(Screen):
         )
         self.sample_size_spinner.bind(text=self._on_sample_size_change)
 
-        self.max_samples = int(self.record_duration * self.TARGET_PTS_PER_SEC)
+        # Fixed display points for waveform visualization
+        self.max_display_points = 2000
         self.samples = []
-        self.decimate = max(1, round(Audio.sample_rate / self.TARGET_PTS_PER_SEC))
+
+        # Calculate how many raw samples we'll get, then downsample to 2000 points
+        total_raw_samples = int(self.record_duration * Audio.sample_rate)
+        self.decimate = max(1, total_raw_samples // self.max_display_points)
 
         self.is_recording = False
         self.animal_id = ""
@@ -482,7 +486,7 @@ class RecordScreen(Screen):
         self.switch_to("garden")
 
     def _ingest_for_waveform(self, data, num_channels: int):
-        if not self.is_recording or len(self.samples) >= self.max_samples:
+        if not self.is_recording or len(self.samples) >= self.max_display_points:
             return
 
         mono = data[0::num_channels] if num_channels > 1 else data
@@ -491,7 +495,7 @@ class RecordScreen(Screen):
 
         clipped = np.tanh(mono[::self.decimate] * 5.0)
 
-        remaining = self.max_samples - len(self.samples)
+        remaining = self.max_display_points - len(self.samples)
         if remaining <= 0:
             return
         if clipped.size > remaining:
@@ -507,12 +511,15 @@ class RecordScreen(Screen):
             self.wave_line.points = [0, cy, Window.width, cy]
             return
 
-        arr = np.asarray(self.samples, dtype=float)
+        # Calculate how much of the recording is complete
+        progress = max(0.0, min(1.0, total_n / float(self.max_display_points)))
+        max_x = Window.width * progress
+        if max_x <= 0:
+            self.wave_line.points = [0, cy, Window.width, cy]
+            return
 
-        max_points = 2000
-        if total_n > max_points:
-            stride = int(np.ceil(total_n / max_points))
-            arr = arr[::stride]
+        # Use all samples we've collected so far (already downsampled during ingestion)
+        arr = np.asarray(self.samples, dtype=float)
         n = len(arr)
 
         peak = float(np.max(np.abs(arr))) if arr.size else 0.0
@@ -524,12 +531,7 @@ class RecordScreen(Screen):
         ys = cy + arr * yscale
         ys = np.clip(ys, 0.0, float(Window.height))
 
-        progress = max(0.0, min(1.0, total_n / float(self.max_samples)))
-        max_x = Window.width * progress
-        if max_x <= 0:
-            self.wave_line.points = [0, cy, Window.width, cy]
-            return
-
+        # Spread points evenly across the progress width
         xs = np.linspace(0.0, max_x, n, dtype=float)
 
         pts = np.empty(n * 2, dtype=float)
