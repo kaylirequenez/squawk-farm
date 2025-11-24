@@ -22,6 +22,5 @@ def build_app():
     sm = ScreenManager(globals=Globals())
     sm.add_screen(GardenScreen(name="garden"))
     sm.add_screen(RecordScreen(name="record"))
-    sm.add_screen(LoopEditorScreen(name="loop"))
     sm.add_screen(LoopPlacementScreen(name="loop_placement"))
     return sm

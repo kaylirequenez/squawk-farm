@@ -242,6 +242,9 @@ class LoopEngine:
     def get_total_slots(self) -> int:
         return self.grid.get_total_slots()
     
+    def get_base_midi(self, animal_id: str) -> int:
+        return self.loops[animal_id].midi
+    
     def get_instance_info(self, animal_id: str, start_slot: int) -> Tuple[int, int]:
         """
         For UI drawing: returns (num_slots, midi)

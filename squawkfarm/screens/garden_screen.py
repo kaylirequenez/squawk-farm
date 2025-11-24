@@ -140,4 +140,4 @@ class GardenScreen(Screen):
         animal = self.animals.get(animal_id)
         if animal:
             # Switch to loop editor with the animal's data
-            self.switch_to("loop", animal_id, 8)
+            self.switch_to("loop_placement", animal_id)

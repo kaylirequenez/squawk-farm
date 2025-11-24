@@ -4,14 +4,15 @@ import numpy as np
 
 from kivy.uix.button import Button
 from kivy.uix.spinner import Spinner
+from kivy.uix.image import Image
 from kivy.core.window import Window
-from kivy.graphics import Color, Line
+from kivy.graphics import Color, Line, Rectangle
 from kivy.clock import Clock
 
 from imslib.audio import Audio
 from imslib.screen import Screen
 from imslib.writer import AudioWriter
-from imslib.wavesrc import WaveFile, WaveBuffer
+from imslib.wavesrc import WaveFile
 from imslib.wavegen import WaveGenerator
 
 from squawkfarm.services.loop_engine import LoopEngine
@@ -24,8 +25,7 @@ from squawkfarm.utils import (
     get_animal_recording_dir,
     get_metronome_sound_path,
 )
-from squawkfarm.utils import get_animal_recording_dir
-
+from squawkfarm.utils import get_animal_recording_dir, get_ui_asset_path
 
 class RecordScreen(Screen):
     TARGET_PTS_PER_SEC = 2200
@@ -46,6 +46,24 @@ class RecordScreen(Screen):
 
         self.viz_scale = Window.height * 0.35
 
+        self.barn_path = get_ui_asset_path("barn4.png")
+        self.barn = Image(source=self.barn_path).texture
+        self.barn_btn_size = Window.width / 8
+        self.barn_btn = Button(
+            size_hint=(None, None),
+            size=(self.barn_btn_size, self.barn_btn_size),
+            pos=(Window.width - self.barn_btn_size, 0),
+            background_normal="",
+            background_color=(1, 1, 1, 0),
+        )
+        with self.barn_btn.canvas.before:
+            self.barn_rect = Rectangle(
+                pos=self.barn_btn.pos,
+                size=self.barn_btn.size,
+                texture=self.barn,
+            )
+        self.barn_btn.bind(on_press=self._on_barn_press)
+
         self.record_btn = Button(
             text="Record",
             size_hint=(None, None),
@@ -58,7 +76,7 @@ class RecordScreen(Screen):
             text="Add to Loop",
             size_hint=(None, None),
             size=(160, 64),
-            pos=(Window.width - 180, 20),
+            pos=(Window.width - 160 - 20, Window.height - 64 - 20),
             disabled=True,
             opacity=0,
         )
@@ -124,12 +142,14 @@ class RecordScreen(Screen):
         self.add_widget(self.add_loop_btn)
         self.add_widget(self.sample_button)
         self.add_widget(self.sample_size_spinner)
+        self.add_widget(self.barn_btn)
 
     def _remove_button_widgets(self):
         self.remove_widget(self.record_btn)
         self.remove_widget(self.add_loop_btn)
         self.remove_widget(self.sample_button)
         self.remove_widget(self.sample_size_spinner)
+        self.remove_widget(self.barn_btn)
 
     def _clear_marker_lines(self):
         if self.left_marker_line is not None:
@@ -156,8 +176,9 @@ class RecordScreen(Screen):
         self.canvas.clear()
 
         self.grid = LoopGrid(
-            loop_engine=self.loop_engine,
-            num_slots=self.record_slots,
+            total_slots=self.record_slots,
+            slots_per_beat=self.loop_engine.get_slots_per_beat(),
+            slots_per_measure=self.loop_engine.get_slots_per_measure(),
         )
         self.canvas.before.add(self.grid)
 
@@ -183,13 +204,20 @@ class RecordScreen(Screen):
         self.loop_engine.on_update()
 
     def on_resize(self, winsize):
-        if hasattr(self, "grid"):
+        if hasattr(self, "grid"):   
             self.grid.on_resize(winsize)
-
+        
         self.viz_scale = Window.height * 0.35
-        self.add_loop_btn.pos = (Window.width - 180, 20)
+        # Move add_loop_btn to top right
+        self.add_loop_btn.pos = (Window.width - self.add_loop_btn.width - 20, Window.height - self.add_loop_btn.height - 20)
         self.sample_button.pos = (Window.width / 2 - 50, Window.height - 60)
         self.sample_size_spinner.pos = (20, Window.height - 70)
+        # Barn button at bottom right
+        self.barn_btn.size = (Window.width / 8, Window.width / 8)
+        self.barn_btn.pos = (Window.width - self.barn_btn.width, 0)
+        # Update barn image rect
+        self.barn_rect.size = self.barn_btn.size
+        self.barn_rect.pos = self.barn_btn.pos
 
     def on_exit(self):
         self._clear_marker_lines()
