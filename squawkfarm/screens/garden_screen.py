@@ -1,4 +1,3 @@
-"""Garden (main) screen for squawk-farm."""
 import random
 from imslib.screen import Screen
 from kivy.core.window import Window
@@ -17,6 +16,7 @@ from kivy.clock import Clock
 from squawkfarm.services.loop_engine import LoopEngine
 from ..models.animal import Animal
 from squawkfarm.widgets.animal_widget import AnimalWidget
+from squawkfarm.widgets.egg_widget import EggWidget
 from squawkfarm.widgets.sun_widget import SunWidget
 from squawkfarm.utils import get_ui_asset_path
 
@@ -30,10 +30,11 @@ class GardenScreen(Screen):
         self.num_animals = 0
         self.animals = {}
         self.animal_widgets = {}
+        self.egg_widgets = {}
         self.active_animal_id = None
 
         self.farm_path = get_ui_asset_path("lawn.png")
-        self.barn_path = get_ui_asset_path("barn4.png")
+        self.barn_path = get_ui_asset_path("barn.png")
         self.woodB_path = get_ui_asset_path("board.png")
 
         self.bg_image = Image(source=self.farm_path).texture
@@ -63,6 +64,25 @@ class GardenScreen(Screen):
         self.barn_button.bind(on_press=self.on_barn_press)
         self.add_widget(self.barn_button)
 
+        self.chords_path = get_ui_asset_path("chords.png")
+        self.chords_texture = Image(source=self.chords_path).texture
+        self.chord_btn_size = Window.width / 10
+        self.chord_btn = Button(
+            size_hint=(None, None),
+            size=(self.chord_btn_size, self.chord_btn_size),
+            pos=(Window.width - self.chord_btn_size - 10, Window.height - self.chord_btn_size - 10),
+            background_normal="",
+            background_color=(1, 1, 1, 0),
+        )
+        with self.chord_btn.canvas.before:
+            self.chord_rect = Rectangle(
+                pos=self.chord_btn.pos,
+                size=self.chord_btn.size,
+                texture=self.chords_texture,
+            )
+        self.chord_btn.bind(on_press=self._on_chord_press)
+        self.add_widget(self.chord_btn)
+
         self.sun_widget = SunWidget()
         self.add_widget(self.sun_widget)
 
@@ -74,28 +94,60 @@ class GardenScreen(Screen):
         widget = self.animal_widgets.get(animal.animal_id)
 
         if widget is None:
-            widget = AnimalWidget(animal, on_click_callback=self._on_animal_click)
+            if animal.animal_id in self.egg_widgets:
+                return
 
             width, height = Window.size
-            margin = 10
-            max_x = max(margin, width - widget.width - margin)
-            max_y = max(margin, height - widget.height - margin)
+            margin = 50
 
-            x = random.uniform(margin, max_x)
-            y = random.uniform(margin, max_y)
-            widget.pos = (x, y)
+            min_y = height * 0.05
+            max_y = height * 0.20
+            max_x = width - margin
 
-            self.animal_widgets[animal.animal_id] = widget
-            self.add_widget(widget)
+            spawn_x, spawn_y = self._find_non_colliding_spawn(margin, max_x, max_y, 100, min_y)
+
+            animal.pos = (spawn_x, spawn_y)
+
+            egg = EggWidget(animal.animal_id, on_hatch_callback=self._on_egg_hatch)
+            egg.set_pos((spawn_x, spawn_y))
+            self.egg_widgets[animal.animal_id] = egg
+            self.add_widget(egg)
+
+            if animal.animal_id in self.loop_engine.loops:
+                self.loop_engine.set_loop_volume(animal.animal_id, 0.0)
         else:
             widget.update_from_animal(animal)
 
-    def on_sing(self, animal_id: str):
+    def _on_egg_hatch(self, animal_id):
+        egg = self.egg_widgets.pop(animal_id, None)
+        if egg is None:
+            return
+
+        egg_x, egg_y = egg.pos
+        egg.remove_from_parent()
+
+        animal = self.animals.get(animal_id)
+        if animal is None:
+            return
+
+        animal.pos = (egg_x, egg_y)
+        widget = AnimalWidget(animal, on_click_callback=self._on_animal_click)
+        widget.move_to((egg_x, egg_y))
+        self.animal_widgets[animal_id] = widget
+        self.add_widget(widget)
+
+        if animal_id in self.loop_engine.loops:
+            self.loop_engine.set_loop_volume(animal_id, 1.0)
+            self.loop_engine.auto_generate_for_animal(animal_id)
+            self.loop_engine.pause()
+            self.loop_engine.play(start_time=0.0, loop=True)
+
+    def on_sing(self, animal_id):
         widget = self.animal_widgets.get(animal_id)
         if widget is not None:
             widget.open_mouth()
 
-    def on_close_mouth(self, animal_id: str):
+    def on_close_mouth(self, animal_id):
         widget = self.animal_widgets.get(animal_id)
         if widget is not None:
             widget.close_mouth()
@@ -114,10 +166,45 @@ class GardenScreen(Screen):
     def on_exit(self):
         self.loop_engine.pause()
 
+    def _find_non_colliding_spawn(self, min_x, max_x, max_y, size, min_y, max_attempts=50):
+        for _ in range(max_attempts):
+            x = random.uniform(min_x, max_x)
+            y = random.uniform(min_y, max_y)
+            collides = False
+            for egg in self.egg_widgets.values():
+                ex, ey = egg.pos
+                ew, eh = egg.size
+                min_dist_x = (size + ew) / 2 * 1.2
+                min_dist_y = (size + eh) / 2 * 1.2
+                if abs(x - ex) < min_dist_x and abs(y - ey) < min_dist_y:
+                    collides = True
+                    break
+            if not collides:
+                for aw in self.animal_widgets.values():
+                    ax, ay = aw.pos
+                    min_dist_x = (size + aw.width) / 2 * 1.2
+                    min_dist_y = (size + aw.height) / 2 * 1.2
+                    if abs(x - ax) < min_dist_x and abs(y - ay) < min_dist_y:
+                        collides = True
+                        break
+            if not collides:
+                return x, y
+        return random.uniform(min_x, max_x), random.uniform(min_y, max_y)
+
+    def _get_other_animal_positions(self, exclude_id):
+        positions = []
+        for aid, aw in self.animal_widgets.items():
+            if aid != exclude_id:
+                positions.append((aw.pos[0], aw.pos[1], aw.width, aw.height))
+        for egg in self.egg_widgets.values():
+            positions.append((egg.pos[0], egg.pos[1], egg.size[0], egg.size[1]))
+        return positions
+
     def _update_animals(self, dt):
         bounds = Window.size
-        for widget in self.animal_widgets.values():
-            widget.update_wander(dt, bounds)
+        for aid, widget in self.animal_widgets.items():
+            others = self._get_other_animal_positions(aid)
+            widget.update_wander(dt, bounds, others)
 
     def _barn_anchor_pos_size(self):
         return self.barn_button.pos, self.barn_button.size
@@ -128,20 +215,26 @@ class GardenScreen(Screen):
     def on_resize(self, *args):
         self.bg_rect.pos = (0, 0)
         self.bg_rect.size = Window.size
-        self.b_size = Window.width / 6
+        self.b_size = Window.width / 8
         new_size = (self.b_size, self.b_size)
         new_pos = (Window.width - self.b_size, 0)
         self.barn_button.size = new_size
         self.barn_rect.size = new_size
         self.barn_button.pos = new_pos
         self.barn_rect.pos = new_pos
+        self.chord_btn_size = Window.width / 10
+        self.chord_btn.size = (self.chord_btn_size, self.chord_btn_size)
+        self.chord_btn.pos = (Window.width - self.chord_btn_size - 10, Window.height - self.chord_btn_size - 10)
+        self.chord_rect.size = self.chord_btn.size
+        self.chord_rect.pos = self.chord_btn.pos
 
     def on_barn_press(self, instance):
         self.switch_to("record")
 
-    def _on_animal_click(self, animal_id: str):
-        """Handle clicks on animals - switch to loop editor to view/edit their loop."""
+    def _on_chord_press(self, *_):
+        self.switch_to("chord")
+
+    def _on_animal_click(self, animal_id):
         animal = self.animals.get(animal_id)
         if animal:
-            # Switch to loop editor with the animal's data
             self.switch_to("loop_placement", animal_id)

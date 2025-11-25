@@ -3,11 +3,16 @@ import uuid
 import numpy as np
 
 from kivy.uix.button import Button
-from kivy.uix.spinner import Spinner
+from kivy.uix.behaviors import ButtonBehavior
+from kivy.uix.spinner import Spinner, SpinnerOption
 from kivy.uix.image import Image
 from kivy.core.window import Window
 from kivy.graphics import Color, Line, Rectangle
 from kivy.clock import Clock
+
+
+class ImageButton(ButtonBehavior, Image):
+    pass
 
 from imslib.audio import Audio
 from imslib.screen import Screen
@@ -15,7 +20,6 @@ from imslib.writer import AudioWriter
 from imslib.wavesrc import WaveFile
 from imslib.wavegen import WaveGenerator
 
-from squawkfarm.services.loop_engine import LoopEngine
 from squawkfarm.ui.loop_grid import LoopGrid
 from squawkfarm.services.animal_gen import render_creature_image
 from squawkfarm.models.animal import Animal
@@ -27,16 +31,53 @@ from squawkfarm.utils import (
 )
 from squawkfarm.utils import get_animal_recording_dir, get_ui_asset_path
 
+class StyledSpinnerOption(SpinnerOption):
+    def __init__(self, **kwargs):
+        kwargs.setdefault('background_normal', '')
+        kwargs.setdefault('background_down', '')
+        kwargs.setdefault('background_color', (1, 0.9, 0.95, 1))
+        kwargs.setdefault('color', (0.05, 0.05, 0.3, 1))
+        kwargs.setdefault('font_size', 22)
+        kwargs.setdefault('markup', True)
+        super().__init__(**kwargs)
+
+
+class ShadowSpinner(Spinner):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._shadow_rect = None
+        self.bind(pos=self._update_shadow, size=self._update_shadow)
+        self._update_shadow()
+
+    def _update_shadow(self, *_):
+        if self._shadow_rect:
+            self.canvas.before.remove(self._shadow_rect)
+            self._shadow_rect = None
+
+        with self.canvas.before:
+            Color(0.15, 0.1, 0.05, 0.7)
+            self._shadow_rect = Rectangle(
+                pos=(self.x + 5, self.y - 5),
+                size=self.size
+            )
+
+
 class RecordScreen(Screen):
     TARGET_PTS_PER_SEC = 2200
 
+    def _create_spinner_option_cls(self):
+        return StyledSpinnerOption
+
     def __init__(self, **kwargs):
         super(RecordScreen, self).__init__(**kwargs)
-        self.loop_engine: LoopEngine = Screen.globals.loop_engine
+        self.loop_engine = Screen.globals.loop_engine
 
         self.window_slots = self.loop_engine.beat_to_slot(1)
         self.record_slots = self.window_slots * 8
         self.record_duration = self.loop_engine.slot_to_time(self.record_slots)
+
+        self.grid_x_margin = Window.width * 0.1
+        self.grid_y_margin = Window.height * 0.15
 
         def listen_func(data, num_channels):
             self.writer.add_audio(data, num_channels)
@@ -44,9 +85,9 @@ class RecordScreen(Screen):
 
         self.mic = Audio(num_channels=1, input_func=listen_func, num_input_channels=1)
 
-        self.viz_scale = Window.height * 0.35
+        self.viz_scale = Window.height * 0.25
 
-        self.barn_path = get_ui_asset_path("barn4.png")
+        self.barn_path = get_ui_asset_path("barn.png")
         self.barn = Image(source=self.barn_path).texture
         self.barn_btn_size = Window.width / 8
         self.barn_btn = Button(
@@ -64,68 +105,78 @@ class RecordScreen(Screen):
             )
         self.barn_btn.bind(on_press=self._on_barn_press)
 
-        self.record_btn = Button(
-            text="Record",
+        # Record/Pause button (image-based)
+        self.btn_size = 100
+        self.record_icon_path = get_ui_asset_path("record.png")
+        self.pause_icon_path = get_ui_asset_path("pause.png")
+
+        self.record_btn = ImageButton(
+            source=self.record_icon_path,
             size_hint=(None, None),
-            size=(160, 64),
+            size=(self.btn_size, self.btn_size),
             pos=(20, 20),
         )
         self.record_btn.bind(on_release=self._on_record_press)
 
-        self.add_loop_btn = Button(
-            text="Add to Loop",
+        self.play_icon_path = get_ui_asset_path("play.png")
+        self.play_btn = ImageButton(
+            source=self.play_icon_path,
             size_hint=(None, None),
-            size=(160, 64),
-            pos=(Window.width - 160 - 20, Window.height - 64 - 20),
+            size=(self.btn_size, self.btn_size),
+            pos=(20 + self.btn_size + 20, 20),
+            opacity=0,
+            disabled=True,
+        )
+        self.play_btn.bind(on_release=self._on_play_press)
+
+        self.hatch_icon_path = get_ui_asset_path("hatch.png")
+        self.hatch_btn_size = 300
+        self.add_loop_btn = ImageButton(
+            source=self.hatch_icon_path,
+            size_hint=(None, None),
+            size=(self.hatch_btn_size, self.hatch_btn_size),
+            pos=(Window.width - self.hatch_btn_size - 20, Window.height - self.hatch_btn_size - 20),
             disabled=True,
             opacity=0,
         )
         self.add_loop_btn.bind(on_release=self._add_animal)
 
-        self.sample_button = Button(
-            text="Sample",
-            size_hint=(None, None),
-            size=(100, 50),
-            pos=(Window.width / 2 - 50, Window.height - 60),
-            disabled=True,
-            opacity=0,
-        )
-        self.sample_button.bind(on_press=self._on_sample_press)
-        
-        # Sample size options with corresponding pulse/beat multipliers
         self.sample_sizes = {
-            "Small": 1,    # 1 beat
-            "Medium": 2,   # 2 beats  
-            "Large": 4     # 4 beats
+            "Small": 1,
+            "Medium": 2,
+            "Large": 4
         }
-        self.current_sample_size = "Medium"  # Default selection
+        self.current_sample_size = "Medium"
         
-        # Sample size dropdown (initially hidden)
-        self.sample_size_spinner = Spinner(
-            text=self.current_sample_size,
+        self.sample_size_spinner = ShadowSpinner(
+            text=f"[b]{self.current_sample_size}[/b]",
+            markup=True,
             values=list(self.sample_sizes.keys()),
             size_hint=(None, None),
-            size=(120, 50),
-            pos=(20, Window.height - 70),
+            size=(160, 60),
+            pos=(20, Window.height - 80),
             disabled=True,
             opacity=0,
+            background_normal='',
+            background_down='',
+            background_color=(1, 0.9, 0.95, 1),
+            color=(0.05, 0.05, 0.3, 1),
+            font_size=24,
+            option_cls=self._create_spinner_option_cls(),
         )
         self.sample_size_spinner.bind(text=self._on_sample_size_change)
 
-        # Fixed display points for waveform visualization
         self.max_display_points = 2000
         self.samples = []
 
-        # Calculate how many raw samples we'll get, then downsample to 2000 points
         total_raw_samples = int(self.record_duration * Audio.sample_rate)
         self.decimate = max(1, total_raw_samples // self.max_display_points)
 
         self.is_recording = False
         self.animal_id = ""
-        
-        # Count-in audio setup
+
         self.count_in_generator = None
-        self.count_in_audio = Audio(num_channels=1)  # Separate audio instance for count-in
+        self.count_in_audio = Audio(num_channels=1)
 
         self.left_marker_line = None
         self.right_marker_line = None
@@ -133,25 +184,25 @@ class RecordScreen(Screen):
         self.right_marker_x = Window.width
         self.dragging_marker = None
 
-    def _set_editing_buttons_visible(self, visible: bool):
+    def _set_editing_buttons_visible(self, visible):
         self.add_loop_btn.disabled = not visible
         self.add_loop_btn.opacity = 1 if visible else 0
-        self.sample_button.disabled = not visible
-        self.sample_button.opacity = 1 if visible else 0
+        self.play_btn.disabled = not visible
+        self.play_btn.opacity = 1 if visible else 0
         self.sample_size_spinner.disabled = not visible
         self.sample_size_spinner.opacity = 1 if visible else 0
 
     def _add_button_widgets(self):
         self.add_widget(self.record_btn)
+        self.add_widget(self.play_btn)
         self.add_widget(self.add_loop_btn)
-        self.add_widget(self.sample_button)
         self.add_widget(self.sample_size_spinner)
         self.add_widget(self.barn_btn)
 
     def _remove_button_widgets(self):
         self.remove_widget(self.record_btn)
+        self.remove_widget(self.play_btn)
         self.remove_widget(self.add_loop_btn)
-        self.remove_widget(self.sample_button)
         self.remove_widget(self.sample_size_spinner)
         self.remove_widget(self.barn_btn)
 
@@ -192,14 +243,29 @@ class RecordScreen(Screen):
             total_slots=self.record_slots,
             slots_per_beat=self.loop_engine.get_slots_per_beat(),
             slots_per_measure=self.loop_engine.get_slots_per_measure(),
+            x_margin=self.grid_x_margin,
+            y_margin=self.grid_y_margin,
+            skip_outer_lines=True,
         )
         self.canvas.before.add(self.grid)
 
+        grid_cy = self.grid.y + self.grid.height / 2
+
         with self.canvas:
-            Color(0, 0.8, 0, 1)
+            Color(0.4, 0.4, 0.6, 0.5)
+            self.wave_shadow = Line(
+                points=[self.grid.x + 2, grid_cy - 2, self.grid.x + self.grid.width + 2, grid_cy - 2],
+                width=2.5,
+            )
+            Color(0.6, 0.6, 0.85, 1)
             self.wave_line = Line(
-                points=[0, Window.height / 2, Window.width, Window.height / 2],
-                width=1.5,
+                points=[self.grid.x, grid_cy, self.grid.x + self.grid.width, grid_cy],
+                width=2.0,
+            )
+            Color(0.45, 0.6, 0.35, 1)
+            self.wave_line_trim = Line(
+                points=[self.grid.x, grid_cy, self.grid.x, grid_cy],
+                width=2.0,
             )
 
         self._add_button_widgets()
@@ -210,32 +276,35 @@ class RecordScreen(Screen):
             self.mic.on_update()
             self._update_wave()
         
-        # Always update count-in audio if a generator is active
         if self.count_in_audio.generator is not None:
             self.count_in_audio.on_update()
 
         self.loop_engine.on_update()
 
     def on_resize(self, winsize):
-        if hasattr(self, "grid"):   
+        if hasattr(self, "grid"):
+            self.grid.x_margin = Window.width * 0.1
+            self.grid.y_margin = Window.height * 0.15
             self.grid.on_resize(winsize)
-        
-        self.viz_scale = Window.height * 0.35
-        # Move add_loop_btn to top right
-        self.add_loop_btn.pos = (Window.width - self.add_loop_btn.width - 20, Window.height - self.add_loop_btn.height - 20)
-        self.sample_button.pos = (Window.width / 2 - 50, Window.height - 60)
-        self.sample_size_spinner.pos = (20, Window.height - 70)
-        # Barn button at bottom right
+            self.viz_scale = self.grid.height * 0.4
+        self.add_loop_btn.pos = (Window.width - self.hatch_btn_size - 20, Window.height - self.hatch_btn_size - 20)
+        self.sample_size_spinner.pos = (20, Window.height - 80)
         self.barn_btn.size = (Window.width / 8, Window.width / 8)
         self.barn_btn.pos = (Window.width - self.barn_btn.width, 0)
-        # Update barn image rect
         self.barn_rect.size = self.barn_btn.size
         self.barn_rect.pos = self.barn_btn.pos
 
     def on_exit(self):
+        if hasattr(self, '_record_scheduled_event') and self._record_scheduled_event:
+            self._record_scheduled_event.cancel()
+            self._record_scheduled_event = None
+
+        self.is_recording = False
+        self._recording_started = False
         self._clear_marker_lines()
         self._set_editing_buttons_visible(False)
-        self.record_btn.text = "Record"
+        self.record_btn.source = self.record_icon_path
+        self.record_btn.disabled = False
         self._remove_button_widgets()
         self.loop_engine.pause()
 
@@ -244,9 +313,14 @@ class RecordScreen(Screen):
 
     def _on_record_press(self, *_):
         if not self.is_recording:
-            self._start_recording()
+            if not hasattr(self, '_recording_started') or not self._recording_started:
+                self._start_recording()
+            else:
+                self._resume_recording()
+        else:
+            self._pause_recording()
 
-    def _on_sample_press(self, *_):
+    def _on_play_press(self, *_):
         self.loop_engine.toggle_play_recording_preview()
         
     def _update_sample_pixels(self):
@@ -255,17 +329,13 @@ class RecordScreen(Screen):
         self.sample_pixels = self.grid.slots_to_pixels(sample_slots)
         
     def _on_sample_size_change(self, spinner, text):
-        """Handle sample size dropdown selection change."""
         self.current_sample_size = text
         self._update_sample_pixels()
-        
+
         if self.loop_engine.recording is None:
             return
 
-        # Set right marker based on left marker and sample_pixels
         self.right_marker_x = self.left_marker_x + self.sample_pixels
-
-        # If right marker exceeds window, shift both left by the overflow
         overflow = self.right_marker_x - Window.width
         if overflow > 0:
             self.left_marker_x -= overflow
@@ -276,28 +346,57 @@ class RecordScreen(Screen):
 
     def _start_recording(self):
         self.samples.clear()
+        self._recording_started = False
+        self._recorded_frames = 0
+        self._record_scheduled_event = None
 
         self._clear_marker_lines()
         self._set_editing_buttons_visible(False)
-        
-        # Play 4-beat count-in before starting actual recording
-        self.record_btn.text = "Count-in..."
+        self.record_btn.disabled = True
         count_in_duration = self._play_count_in()
-        
-        # Schedule actual recording to start after count-in finishes
+
         Clock.schedule_once(lambda dt: self._begin_actual_recording(), count_in_duration)
 
     def _begin_actual_recording(self):
-        """Begin the actual recording after count-in completes."""
+        self._recording_started = True
         self.is_recording = True
+        self.record_btn.disabled = False
+        self.record_btn.source = self.pause_icon_path
         self.writer.start()
-        self.record_btn.text = "Recording..."
 
-        Clock.schedule_once(lambda dt: self._finish_recording(), self.record_duration)
+        remaining_time = self.record_duration - (self._recorded_frames / Audio.sample_rate)
+        self._record_scheduled_event = Clock.schedule_once(
+            lambda dt: self._finish_recording(), remaining_time
+        )
+
+    def _pause_recording(self):
+        self.is_recording = False
+        self.record_btn.source = self.record_icon_path
+
+        if self._record_scheduled_event:
+            self._record_scheduled_event.cancel()
+            self._record_scheduled_event = None
+
+        self._recorded_frames = len(self.samples) * self.decimate
+
+    def _resume_recording(self):
+        self.is_recording = True
+        self.record_btn.source = self.pause_icon_path
+
+        remaining_frames = int(self.record_duration * Audio.sample_rate) - self._recorded_frames
+        remaining_time = remaining_frames / Audio.sample_rate
+
+        if remaining_time > 0:
+            self._record_scheduled_event = Clock.schedule_once(
+                lambda dt: self._finish_recording(), remaining_time
+            )
+        else:
+            self._finish_recording()
 
     def _finish_recording(self):
         self.is_recording = False
-        self.record_btn.text = "Re-record"
+        self._recording_started = False
+        self.record_btn.source = self.record_icon_path
 
         self.writer.stop("raw")
 
@@ -305,42 +404,32 @@ class RecordScreen(Screen):
         self._draw_margin_markers()
         self._update_recording_margins()
         self._set_editing_buttons_visible(True)
-        
+
     def _update_recording_margins(self):
-        """Update loop engine margins based on current marker positions."""
-        self.loop_engine.set_left_margin_of_recording(self.left_marker_x / Window.width)
-        self.loop_engine.set_right_margin_of_recording(self.right_marker_x / Window.width)
-        
-    def _update_recording_margins(self):
-        """Update loop engine margins based on current marker positions."""
-        self.loop_engine.set_left_margin_of_recording(self.left_marker_x / Window.width)
-        self.loop_engine.set_right_margin_of_recording(self.right_marker_x / Window.width)
+        left_fraction = (self.left_marker_x - self.grid.x) / self.grid.width
+        right_fraction = (self.right_marker_x - self.grid.x) / self.grid.width
+        self.loop_engine.set_left_margin_of_recording(left_fraction)
+        self.loop_engine.set_right_margin_of_recording(right_fraction)
 
     def _play_count_in(self):
-        """Play 4-beat count-in with speed adjustment for current BPM. Returns duration in seconds."""
         try:
-            # Load metronome sound
             wf = WaveFile(get_metronome_sound_path())
             metronome_data = wf.get_frames(0, wf.end)
-            
-            # Get current BPM and calculate beat duration in seconds (60 / BPM)
+
             beat_duration = self.loop_engine.slot_to_time(self.loop_engine.beat_to_slot(1))
-            
-            # Resample metronome to match beat duration
+
             metronome_duration = len(metronome_data) / Audio.sample_rate
             speed_factor = metronome_duration / beat_duration
             num_output_samples = int(len(metronome_data) / speed_factor)
-            
+
             resampled_data = np.interp(
                 np.linspace(0, len(metronome_data) - 1, num_output_samples),
                 np.arange(len(metronome_data)),
                 metronome_data
             )
-            
-            # Create 4-beat count-in by repeating the metronome click 4 times
+
             count_in_data = np.tile(resampled_data, 4)
-            
-            # Create a simple buffer wrapper for the audio data
+
             class ArrayBuffer:
                 def __init__(self, data):
                     self.data = data
@@ -355,8 +444,7 @@ class RecordScreen(Screen):
                 
                 def get_num_channels(self):
                     return self.num_channels
-            
-            # Set up generator for playback
+
             buffer = ArrayBuffer(count_in_data)
             self.count_in_generator = WaveGenerator(buffer, loop=False)
             self.count_in_generator.set_gain(0.7)
@@ -371,39 +459,49 @@ class RecordScreen(Screen):
 
 
     def _draw_margin_markers(self):
-        # Center the sample window in the grid
-        self.left_marker_x = Window.width / 2 - self.sample_pixels / 2
-        self.right_marker_x = Window.width / 2 + self.sample_pixels / 2
+        grid_center_x = self.grid.x + self.grid.width / 2
+        self.left_marker_x = grid_center_x - self.sample_pixels / 2
+        self.right_marker_x = grid_center_x + self.sample_pixels / 2
 
-        self.canvas.after.add(Color(1, 0, 0, 1))
+        grid_bottom = self.grid.y
+        grid_top = self.grid.y + self.grid.height
+
+        self.canvas.after.add(Color(0.05, 0.05, 0.3, 1))
         self.left_marker_line = Line(
-            points=[self.left_marker_x, 0, self.left_marker_x, Window.height],
-            width=3,
+            points=[self.left_marker_x, grid_bottom, self.left_marker_x, grid_top],
+            width=5,
         )
         self.canvas.after.add(self.left_marker_line)
 
         self.right_marker_line = Line(
-            points=[self.right_marker_x, 0, self.right_marker_x, Window.height],
-            width=3,
+            points=[self.right_marker_x, grid_bottom, self.right_marker_x, grid_top],
+            width=5,
         )
         self.canvas.after.add(self.right_marker_line)
+
+        self._update_wave()
 
     def _update_marker_lines(self):
         if not self.left_marker_line or not self.right_marker_line:
             return
 
+        grid_bottom = self.grid.y
+        grid_top = self.grid.y + self.grid.height
+
         self.left_marker_line.points = [
             self.left_marker_x,
-            0,
+            grid_bottom,
             self.left_marker_x,
-            Window.height,
+            grid_top,
         ]
         self.right_marker_line.points = [
             self.right_marker_x,
-            0,
+            grid_bottom,
             self.right_marker_x,
-            Window.height,
+            grid_top,
         ]
+
+        self._update_wave()
 
     def on_touch_down(self, touch):
         if not self.left_marker_line or not self.right_marker_line:
@@ -425,18 +523,18 @@ class RecordScreen(Screen):
     def on_touch_move(self, touch):
         if self.dragging_marker and touch.grab_current == self:
             marker_distance = self.right_marker_x - self.left_marker_x
+            grid_left = self.grid.x
+            grid_right = self.grid.x + self.grid.width
             if self.dragging_marker == "left":
-                max_left_x = Window.width - self.sample_pixels
-                new_left_x = max(0, min(touch.x, max_left_x))
-                
-                # Move right marker by the same amount to maintain exact distance
+                max_left_x = grid_right - self.sample_pixels
+                new_left_x = max(grid_left, min(touch.x, max_left_x))
+
                 self.left_marker_x = new_left_x
                 self.right_marker_x = new_left_x + marker_distance
-                
+
             elif self.dragging_marker == "right":
-                new_right_x = max(self.sample_pixels, min(touch.x, Window.width))
-                
-                # Move left marker by the same amount to maintain exact distance
+                new_right_x = max(grid_left + self.sample_pixels, min(touch.x, grid_right))
+
                 self.right_marker_x = new_right_x
                 self.left_marker_x = new_right_x - marker_distance
 
@@ -504,21 +602,25 @@ class RecordScreen(Screen):
         self.samples.extend(float(s) for s in clipped)
 
     def _update_wave(self):
-        cy = Window.height / 2
+        grid_x = self.grid.x
+        grid_w = self.grid.width
+        cy = self.grid.y + self.grid.height / 2
         total_n = len(self.samples)
 
         if total_n < 2:
-            self.wave_line.points = [0, cy, Window.width, cy]
+            self.wave_line.points = [grid_x, cy, grid_x + grid_w, cy]
+            self.wave_shadow.points = [grid_x + 2, cy - 2, grid_x + grid_w + 2, cy - 2]
+            self.wave_line_trim.points = []
             return
 
-        # Calculate how much of the recording is complete
         progress = max(0.0, min(1.0, total_n / float(self.max_display_points)))
-        max_x = Window.width * progress
-        if max_x <= 0:
-            self.wave_line.points = [0, cy, Window.width, cy]
+        max_x = grid_x + grid_w * progress
+        if max_x <= grid_x:
+            self.wave_line.points = [grid_x, cy, grid_x + grid_w, cy]
+            self.wave_shadow.points = [grid_x + 2, cy - 2, grid_x + grid_w + 2, cy - 2]
+            self.wave_line_trim.points = []
             return
 
-        # Use all samples we've collected so far (already downsampled during ingestion)
         arr = np.asarray(self.samples, dtype=float)
         n = len(arr)
 
@@ -529,11 +631,29 @@ class RecordScreen(Screen):
             yscale = min(self.viz_scale, (self.viz_scale * 0.9) / peak)
 
         ys = cy + arr * yscale
-        ys = np.clip(ys, 0.0, float(Window.height))
-
-        # Spread points evenly across the progress width
-        xs = np.linspace(0.0, max_x, n, dtype=float)
+        ys = np.clip(ys, float(self.grid.y), float(self.grid.y + self.grid.height))
+        xs = np.linspace(grid_x, max_x, n, dtype=float)
 
         pts = np.empty(n * 2, dtype=float)
         pts[0::2], pts[1::2] = xs, ys
         self.wave_line.points = pts.tolist()
+
+        shadow_ys = ys - 2
+        shadow_xs = xs + 2
+        shadow_pts = np.empty(n * 2, dtype=float)
+        shadow_pts[0::2], shadow_pts[1::2] = shadow_xs, shadow_ys
+        self.wave_shadow.points = shadow_pts.tolist()
+
+        if hasattr(self, 'left_marker_x') and hasattr(self, 'right_marker_x') and self.left_marker_line:
+            left_idx = int(np.searchsorted(xs, self.left_marker_x))
+            right_idx = int(np.searchsorted(xs, self.right_marker_x))
+            if left_idx < right_idx and left_idx < n:
+                trim_xs = xs[left_idx:right_idx]
+                trim_ys = ys[left_idx:right_idx]
+                trim_pts = np.empty(len(trim_xs) * 2, dtype=float)
+                trim_pts[0::2], trim_pts[1::2] = trim_xs, trim_ys
+                self.wave_line_trim.points = trim_pts.tolist()
+            else:
+                self.wave_line_trim.points = []
+        else:
+            self.wave_line_trim.points = []

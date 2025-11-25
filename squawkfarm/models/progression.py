@@ -1,7 +1,6 @@
 """Models for chord progressions."""
 
 from dataclasses import dataclass
-from typing import List
 
 
 @dataclass
@@ -23,12 +22,12 @@ class ChordProgression:
     Sequence of chords, one per measure (or pattern repeated).
     """
 
-    def __init__(self, chords: List[Chord]):
+    def __init__(self, chords):
         if not chords:
             raise ValueError("ChordProgression requires at least one chord.")
-        self.chords: List[Chord] = chords
+        self.chords = chords
 
-    def get_chord_at_measure(self, measure_index: int) -> Chord:
+    def get_chord_at_measure(self, measure_index):
         """
         Return the chord for a given measure index.
         Loops if measure_index >= len(chords).
@@ -36,26 +35,22 @@ class ChordProgression:
         idx = measure_index % len(self.chords)
         return self.chords[idx]
 
-    def __len__(self) -> int:
+    def __len__(self):
         return len(self.chords)
 
-    def __getitem__(self, index: int) -> Chord:
+    def __getitem__(self, index):
         return self.chords[index]
-    
+
     # TODO: Maxine - update however you see fit
     # maybe later we don't do it per measure ?
     @classmethod
-    def generate_random_progression(
-        cls,
-        key_mode: str,
-        num_measures: int,
-    ) -> "ChordProgression":
+    def generate_random_progression(cls, key_mode, num_measures):
         """
         Create a progression of length `num_measures`.
         """
         if key_mode == "minor":
             # i – VI – VII – v
-            pattern: List[Chord] = [
+            pattern = [
                 Chord(degree=1, quality="min"),   # i
                 Chord(degree=6, quality="maj"),   # VI
                 Chord(degree=7, quality="maj"),   # VII

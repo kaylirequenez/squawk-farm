@@ -1,25 +1,18 @@
-"""Module defining the LoopGrid class for visualizing loop structure."""
-from typing import Optional
 from kivy.graphics.instructions import InstructionGroup
 from kivy.graphics import Line, Color, Rectangle
 from kivy.core.window import Window
 from kivy.uix.image import Image
 
-from squawkfarm.services.loop_engine import LoopEngine
 from squawkfarm.utils import get_ui_asset_path
-# TODO: change inports using _init_
+
 
 class LoopGrid(InstructionGroup):
-    """
-    Visual grid showing slots, sub-beats, beats, and measures for loop/recording editing/placement.
-    """
-    def __init__(self, total_slots: int, slots_per_beat: int, slots_per_measure: int, x_margin: Optional[float] = 0, y_margin: Optional[float] = 0, draw_rows: bool = False):
+    def __init__(self, total_slots, slots_per_beat, slots_per_measure, x_margin=0, y_margin=0, draw_rows=False, skip_outer_lines=False):
         super(LoopGrid, self).__init__()
         self.total_slots = total_slots
         self.slots_per_beat = slots_per_beat
         self.slots_per_measure = slots_per_measure
 
-        # Center grid with margins
         self.x_margin = x_margin or 0
         self.y_margin = y_margin or 0
         self.width = Window.width - 2 * self.x_margin
@@ -29,27 +22,29 @@ class LoopGrid(InstructionGroup):
 
         self.bg_texture = Image(source=get_ui_asset_path("board.png")).texture
 
-        # TODO: make this loop nicer
         self.marker_styles = {
-            "measure": ((0.10, 0.10, 0.10, 1.0), 3.0, 1.00),  # color, width, height_ratio
-            "beat":    ((0.30, 0.30, 0.30, 0.9), 2.0, 1.00), 
+            "measure": ((0.10, 0.10, 0.10, 1.0), 3.0, 1.00),
+            "beat":    ((0.30, 0.30, 0.30, 0.9), 2.0, 1.00),
             "pulse":   ((0.70, 0.70, 0.70, 0.4), 0.8, 1.00),
         }
 
         self.draw_rows = draw_rows
+        self.skip_outer_lines = skip_outer_lines
 
         self.on_resize((Window.width, Window.height))
         
-    def _draw_background(self) -> None:
+    def _draw_background(self):
         self.add(Color(1, 1, 1, 1))
         self._bg_rect = Rectangle(pos=(self.x, self.y), size=(self.width, self.height), texture=self.bg_texture)
         self.add(self._bg_rect)
     
-    def _draw_grid(self) -> None:
+    def _draw_grid(self):
         slot_w = self.width / self.total_slots
 
-        # Draw vertical grid lines
-        for slot in range(self.total_slots + 1):  # include right edge
+        for slot in range(self.total_slots + 1):
+            if self.skip_outer_lines and (slot == 0 or slot == self.total_slots):
+                continue
+
             x = self.x + slot * slot_w
             if slot % self.slots_per_measure == 0:
                 tier = "measure"
@@ -66,7 +61,6 @@ class LoopGrid(InstructionGroup):
             self.add(Color(*color))
             self.add(Line(points=[x, y0, x, y1], width=width_px))
 
-        # Optionally draw horizontal row lines
         if self.draw_rows:
             pulse_color, pulse_width, _ = self.marker_styles["pulse"]
             num_rows = 8
@@ -85,33 +79,28 @@ class LoopGrid(InstructionGroup):
         self._draw_background()
         self._draw_grid()
         
-    def slot_width(self) -> float:
-        """Width of a single slot in pixels."""
+    def slot_width(self):
         return self.width / float(self.total_slots)
 
-    def slot_index_to_x(self, slot_index: int) -> float:
-        """Left edge X pixel for a given slot."""
+    def slot_index_to_x(self, slot_index):
         return self.x + slot_index * self.slot_width()
 
-    def x_to_slot_index(self, x: float) -> int:
+    def x_to_slot_index(self, x):
         rel_x = x - self.x
         slot_index = rel_x / self.slot_width()
         half_beat_slots = self.slots_per_beat // 2
         snapped_index = round(slot_index / half_beat_slots) * half_beat_slots
         return int(snapped_index)
 
-    def slots_to_pixels(self, slots: int) -> float:
+    def slots_to_pixels(self, slots):
         return slots * self.slot_width()
-    
-    def slot_height(self) -> float:
-        """Height of a single slot in pixels."""
-        return self.height / 8.0  # assuming 8 horizontal lines
-    
-    def slot_index_to_y(self, slot_index: int) -> float:
-        """Bottom edge Y pixel for a given slot index (0-based from bottom)."""
+
+    def slot_height(self):
+        return self.height / 8.0
+
+    def slot_index_to_y(self, slot_index):
         return self.y + slot_index * self.slot_height()
-    
-    def y_to_slot_index(self, y: float) -> int:
-        """Convert a y pixel coordinate to nearest slot index (0-based from bottom)."""
+
+    def y_to_slot_index(self, y):
         rel_y = y - self.y
         return int(round(rel_y / self.slot_height()))

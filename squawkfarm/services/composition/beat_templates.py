@@ -1,18 +1,8 @@
 """
 Beat templates and strong-beat definitions for each time signature.
 """
-from typing import Dict, List, Tuple, Set
 
-# ---------------------------------------------------------------------
-# Type aliases
-# ---------------------------------------------------------------------
-
-Beat = float
-BeatTemplate = List[Beat]
-TemplateKey = Tuple[int, int]  # (beats_per_measure, loop_beats_int)
-TemplateTable = Dict[TemplateKey, List[BeatTemplate]]
-
-STRONG_BEATS: Dict[int, Set[int]] = {
+STRONG_BEATS = {
     2: {0},        # 2/4: beat 1
     3: {0},        # 3/4: beat 1
     4: {0, 2},     # 4/4: beats 1 and 3
@@ -22,7 +12,7 @@ STRONG_BEATS: Dict[int, Set[int]] = {
 }
 
 # TODO: incorporate medium beats into rhythmic logic later
-MEDIUM_BEATS: Dict[int, Set[int]] = {
+MEDIUM_BEATS = {
     2: {1},
     3: {1, 2},
     4: {1, 3},
@@ -31,7 +21,7 @@ MEDIUM_BEATS: Dict[int, Set[int]] = {
     12: {2, 5, 8, 11},
 }
 
-BASS_TEMPLATES: TemplateTable = {
+BASS_TEMPLATES = {
     # --------------------------------------------------------------
     # 4/4, 1-beat loop
     #   Typical use: short bass hit, 1 beat long.
@@ -75,7 +65,7 @@ BASS_TEMPLATES: TemplateTable = {
     # TODO: extend later
 }
 
-HARMONY_TEMPLATES: TemplateTable = {
+HARMONY_TEMPLATES = {
     # 4/4, 1-beat harmony loop
     (4, 1): [
         [0.0],                         # chord on beat 1
@@ -103,7 +93,7 @@ HARMONY_TEMPLATES: TemplateTable = {
     # TODO: extend later
 }
 
-MELODY_TEMPLATES: TemplateTable = {
+MELODY_TEMPLATES = {
     # 4/4, 1-beat melody loop (short phrase)
     (4, 1): [
         [0.0, 1.0, 2.0, 3.0],          # hit every beat
@@ -133,7 +123,7 @@ MELODY_TEMPLATES: TemplateTable = {
     # TODO: extend later
 }
 
-ROLE_TEMPLATES: Dict[str, TemplateTable] = {
+ROLE_TEMPLATES = {
     "bass": BASS_TEMPLATES,
     "harmony": HARMONY_TEMPLATES,
     "melody": MELODY_TEMPLATES,

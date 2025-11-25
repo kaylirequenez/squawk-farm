@@ -1,24 +1,59 @@
 import os
 
 from kivy.uix.button import Button
+from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image
+from kivy.uix.label import Label
 from kivy.core.window import Window
 from kivy.graphics import Rectangle, Color
 
+
+class ImageButton(ButtonBehavior, Image):
+    pass
+
+
+class ShadowButton(Button):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._shadow_rect = None
+        self.bind(pos=self._update_shadow, size=self._update_shadow)
+        self._update_shadow()
+
+    def _update_shadow(self, *args):
+        if self._shadow_rect:
+            self.canvas.before.remove(self._shadow_rect)
+            self._shadow_rect = None
+
+        with self.canvas.before:
+            Color(0.15, 0.1, 0.05, 0.7)
+            self._shadow_rect = Rectangle(
+                pos=(self.x + 5, self.y - 5),
+                size=self.size
+            )
+
 from imslib.screen import Screen
 
-from squawkfarm.services.loop_engine import LoopEngine
 from squawkfarm.ui.loop_grid import LoopGrid
 from squawkfarm.utils import get_ui_asset_path
 from squawkfarm.widgets.animal_piano import AnimalPiano, AnimalPianoNote
 
-# TODO: move to pitch file & import
-MAJOR_OFFSETS = [0, 2, 4, 5, 7, 9, 11, 12]   # C D E F G A B C
-MINOR_OFFSETS = [0, 2, 3, 5, 7, 8, 10, 12]   # natural minor example
+MAJOR_OFFSETS = [0, 2, 4, 5, 7, 9, 11, 12]
+MINOR_OFFSETS = [0, 2, 3, 5, 7, 8, 10, 12]
 
-# TODO: Maxine, change to the correct octave!
-def get_octave_c_for_animal(base_midi: int) -> int:
+
+def quantize_to_beat_slots(num_slots, slots_per_beat):
+    beats = num_slots / slots_per_beat
+    if beats < 1.5:
+        quantized_beats = 1
+    elif beats < 3.0:
+        quantized_beats = 2
+    else:
+        quantized_beats = 4
+    return quantized_beats * slots_per_beat
+
+
+def get_octave_c_for_animal(base_midi):
     c_down = base_midi - (base_midi % 12)
     c_up = c_down + 12
     return c_down if abs(base_midi - c_down) <= abs(base_midi - c_up) else c_up
@@ -26,22 +61,18 @@ def get_octave_c_for_animal(base_midi: int) -> int:
 class LoopPlacementScreen(Screen):
     def __init__(self, **kwargs):
         super(LoopPlacementScreen, self).__init__(**kwargs)
-        self.loop_engine: LoopEngine = Screen.globals.loop_engine
+        self.loop_engine = Screen.globals.loop_engine
 
-        self.grid_x_margin = Window.width * 0.08
-        self.grid_y_margin = Window.height * 0.18
+        self.grid_x_margin = Window.width * 0.1
+        self.grid_y_margin = Window.height * 0.15
 
-        # Piano overlay
         self.piano = AnimalPiano()
-        # We'll set pos/size in on_enter / on_resize
 
-        # drag state for notes
         self._drag_note = None
-        self._drag_offset = (0.0, 0.0)        # where inside the note we grabbed it
+        self._drag_offset = (0.0, 0.0)
         self._drag_note_start_slot = None
 
-        # Barn + sample buttons (same as before)
-        self.barn_path = get_ui_asset_path("barn4.png")
+        self.barn_path = get_ui_asset_path("barn.png")
         self.barn = Image(source=self.barn_path).texture
         self.barn_btn_size = Window.width / 8
         self.barn_btn = Button(
@@ -59,54 +90,75 @@ class LoopPlacementScreen(Screen):
             )
         self.barn_btn.bind(on_press=self._on_barn_press)
 
-        self.sample_button = Button(
-            text="Sample",
+        self.play_icon_path = get_ui_asset_path("play.png")
+        self.sample_btn_size = 80
+        self.sample_button = ImageButton(
+            source=self.play_icon_path,
             size_hint=(None, None),
-            size=(100, 50),
-            pos=(Window.width / 2 - 50, Window.height - 60),
+            size=(self.sample_btn_size, self.sample_btn_size),
+            pos=(Window.width / 2 - self.sample_btn_size / 2, Window.height - self.sample_btn_size - 10),
         )
         self.sample_button.bind(on_press=self._on_sample_press)
 
-        # Octave shift buttons
-        self.octave_up_button = Button(
-            text="+",
+        self.octave_btn_size = 100
+        self.up_icon_path = get_ui_asset_path("up.png")
+        self.down_icon_path = get_ui_asset_path("down.png")
+
+        self.octave_label = Label(
+            text="change octave",
             size_hint=(None, None),
-            size=(50, 50),
-            pos=(Window.width / 2 + 60, Window.height - 60),
+            size=(120, 50),
+            pos=(Window.width - 340, Window.height - 60),
+            color=(1, 0.4, 0.7, 1),
+        )
+
+        self.octave_up_button = ImageButton(
+            source=self.up_icon_path,
+            size_hint=(None, None),
+            size=(self.octave_btn_size, self.octave_btn_size),
+            pos=(Window.width - 110, Window.height - self.octave_btn_size - 10),
         )
         self.octave_up_button.bind(on_press=self._on_octave_up_press)
 
-        self.octave_down_button = Button(
-            text="-",
+        self.octave_down_button = ImageButton(
+            source=self.down_icon_path,
             size_hint=(None, None),
-            size=(50, 50),
-            pos=(Window.width / 2 - 110, Window.height - 60),
+            size=(self.octave_btn_size, self.octave_btn_size),
+            pos=(Window.width - 220, Window.height - self.octave_btn_size - 10),
         )
         self.octave_down_button.bind(on_press=self._on_octave_down_press)
 
-        # Add button - creates a new note to drag onto the grid
-        self.add_button = Button(
-            text="Add",
+        self.add_button = ShadowButton(
+            text="[b]Add[/b]",
+            markup=True,
             size_hint=(None, None),
-            size=(80, 50),
-            pos=(20, Window.height - 60),
+            size=(120, 80),
+            pos=(20, Window.height - 90),
+            background_normal='',
+            background_down='',
+            background_color=(1, 0.75, 0.85, 1),
+            color=(0.05, 0.05, 0.3, 1),
+            font_size=18,
         )
         self.add_button.bind(on_press=self._on_add_press)
 
-        # Delete button - spawns a hammer for deletion
-        self.delete_button = Button(
-            text="Delete",
+        self.delete_button = ShadowButton(
+            text="[b]Delete[/b]",
+            markup=True,
             size_hint=(None, None),
-            size=(80, 50),
-            pos=(110, Window.height - 60),
+            size=(120, 80),
+            pos=(150, Window.height - 90),
+            background_normal='',
+            background_down='',
+            background_color=(1, 0.75, 0.85, 1),
+            color=(0.05, 0.05, 0.3, 1),
+            font_size=18,
         )
         self.delete_button.bind(on_press=self._on_delete_press)
 
-        # Track if we're adding a new note
         self._adding_note = False
         self._new_note = None
 
-        # Track hammer for deletion
         self._hammer_active = False
         self._hammer_widget = None
         self._dragging_hammer = False
@@ -114,6 +166,7 @@ class LoopPlacementScreen(Screen):
 
     def _add_button_widgets(self):
         self.add_widget(self.sample_button)
+        self.add_widget(self.octave_label)
         self.add_widget(self.octave_up_button)
         self.add_widget(self.octave_down_button)
         self.add_widget(self.add_button)
@@ -122,22 +175,20 @@ class LoopPlacementScreen(Screen):
 
     def _remove_button_widgets(self):
         self.remove_widget(self.sample_button)
+        self.remove_widget(self.octave_label)
         self.remove_widget(self.octave_up_button)
         self.remove_widget(self.octave_down_button)
         self.remove_widget(self.add_button)
         self.remove_widget(self.delete_button)
         self.remove_widget(self.barn_btn)
 
-    # ---------------- Lifecycle ---------------- #
-
-    def on_enter(self, animal_id: str):
+    def on_enter(self, animal_id):
         self.animal_id = animal_id
         self.canvas.before.clear()
         self.canvas.clear()
 
         Window.bind(on_key_down=self._on_keyboard_down)
 
-        # Add layered backgrounds: lawn.png then board.png on top
         with self.canvas.before:
             Color(1, 1, 1, 1)
             lawn_path = get_ui_asset_path("lawn.png")
@@ -145,8 +196,6 @@ class LoopPlacementScreen(Screen):
             if lawn_tex:
                 Rectangle(pos=(0, 0), size=Window.size, texture=lawn_tex)
 
-          
-        # Grid behind everything in canvas.before
         self.grid = LoopGrid(
             total_slots=self.loop_engine.get_total_slots(),
             slots_per_beat=self.loop_engine.get_slots_per_beat(),
@@ -154,10 +203,10 @@ class LoopPlacementScreen(Screen):
             x_margin=self.grid_x_margin,
             y_margin=self.grid_y_margin,
             draw_rows=True,
+            skip_outer_lines=True,
         )
         self.canvas.before.add(self.grid)
 
-        # Piano overlay spans whole window, anchored at (0,0)
         self.piano.size = Window.size
         self.piano.pos = (0, 0)
         if self.piano.parent:
@@ -169,17 +218,20 @@ class LoopPlacementScreen(Screen):
 
 
     def on_resize(self, winsize):
-        self.sample_button.pos = (Window.width / 2 - 50, Window.height - 60)
-        self.octave_up_button.pos = (Window.width / 2 + 60, Window.height - 60)
-        self.octave_down_button.pos = (Window.width / 2 - 110, Window.height - 60)
-        self.add_button.pos = (20, Window.height - 60)
-        self.delete_button.pos = (110, Window.height - 60)
+        self.sample_button.pos = (Window.width / 2 - self.sample_btn_size / 2, Window.height - self.sample_btn_size - 10)
+        self.octave_up_button.pos = (Window.width - 110, Window.height - self.octave_btn_size - 10)
+        self.octave_down_button.pos = (Window.width - 220, Window.height - self.octave_btn_size - 10)
+        self.octave_label.pos = (Window.width - 340, Window.height - 60)
+        self.add_button.pos = (20, Window.height - 90)
+        self.delete_button.pos = (150, Window.height - 90)
         self.barn_btn.size = (Window.width / 8, Window.width / 8)
         self.barn_btn.pos = (Window.width - self.barn_btn.width, 0)
         self.barn_rect.size = self.barn_btn.size
         self.barn_rect.pos = self.barn_btn.pos
 
         if hasattr(self, "grid"):
+            self.grid.x_margin = Window.width * 0.1
+            self.grid.y_margin = Window.height * 0.15
             self.grid.on_resize(winsize)
             self._rebuild_piano_from_engine()
 
@@ -224,45 +276,39 @@ class LoopPlacementScreen(Screen):
         self.loop_engine.play(animal_id=self.animal_id)
 
     def _on_octave_up_press(self, *_):
-        """Shift all notes up by one octave and play the sequence."""
         self.loop_engine.shift_animal_octave(self.animal_id, 12)
         self._rebuild_piano_from_engine()
         self.loop_engine.pause()
         self.loop_engine.play(animal_id=self.animal_id)
 
     def _on_octave_down_press(self, *_):
-        """Shift all notes down by one octave and play the sequence."""
         self.loop_engine.shift_animal_octave(self.animal_id, -12)
         self._rebuild_piano_from_engine()
         self.loop_engine.pause()
         self.loop_engine.play(animal_id=self.animal_id)
 
     def _on_add_press(self, *_):
-        """Create a new note rectangle that can be dragged onto the grid."""
         if self._adding_note:
-            return  # Already adding a note
+            return
 
-        # Get loop duration to determine note width
         loop_slots = self.loop_engine.grid.frame_to_slot(
             self.loop_engine.loops[self.animal_id].num_frames
         )
-        width = self.grid.slots_to_pixels(loop_slots)
+        quantized_slots = quantize_to_beat_slots(loop_slots, self.loop_engine.get_slots_per_beat())
+        width = self.grid.slots_to_pixels(quantized_slots)
         height = self.grid.slot_height()
 
-        # Get base MIDI and place at middle row (row 3-4)
         base_midi = self.loop_engine.get_base_midi(self.animal_id)
         key_mode = self.loop_engine.get_key_mode()
         midi = self.row_to_midi(3, base_midi, key_mode)
 
-        # Create note in the center of the screen
         x = Window.width / 2 - width / 2
         y = Window.height / 2 - height / 2
 
-        # Add note with a distinct color to show it's being added
         note = self.piano.add_note(x=x, y=y, width=width, height=height)
-        note.start_slot = None  # Mark as new (not yet placed)
+        note.start_slot = None
         note.midi = midi
-        note.set_color((1.0, 0.5, 0.5, 0.8))  # Red-ish tint to show it's new
+        note.set_color((1.0, 0.5, 0.5, 0.8))
 
         self._adding_note = True
         self._new_note = note
@@ -282,7 +328,7 @@ class LoopPlacementScreen(Screen):
             return
 
         hammer_tex = Image(source=hammer_path).texture
-        hammer_size = 60
+        hammer_size = 120
 
         hammer_widget = Widget()
         hammer_widget.size_hint = (None, None)
@@ -300,36 +346,35 @@ class LoopPlacementScreen(Screen):
         self._hammer_active = True
         self._dragging_hammer = True
 
-        # ---------------- Pitch row helpers ---------------- #
-
-    def row_to_midi(self, row: int, base_midi: int, key_mode: str) -> int:
+    def row_to_midi(self, row, base_midi, key_mode):
         octave_c = get_octave_c_for_animal(base_midi)
         offsets = MAJOR_OFFSETS if key_mode == "major" else MINOR_OFFSETS
         row = max(0, min(7, row))
         return octave_c + offsets[row]
-    
-    def midi_to_row(self, midi: int, base_midi: int, key_mode: str) -> int:
+
+    def midi_to_row(self, midi, base_midi, key_mode):
         octave_c = get_octave_c_for_animal(base_midi)
         offsets = MAJOR_OFFSETS if key_mode == "major" else MINOR_OFFSETS
         semitone_offset = midi - octave_c
         row = min(range(8), key=lambda i: abs(offsets[i] - semitone_offset))
         return row
-    
+
     def _rebuild_piano_from_engine(self):
-        """Clear and redraw all notes from LoopEngine.loop instances."""
         self.piano.clear_notes()
-        
+
         height = self.grid.slot_height()
         instances = self.loop_engine.get_instances_info(self.animal_id)
 
         base_midi = self.loop_engine.get_base_midi(self.animal_id)
         key_mode = self.loop_engine.get_key_mode()
+        slots_per_beat = self.loop_engine.get_slots_per_beat()
 
         for start_slot, num_slots, midi in instances:
-            x = self.grid.slot_index_to_x(start_slot)        # window X
-            width = self.grid.slots_to_pixels(num_slots)
+            x = self.grid.slot_index_to_x(start_slot)
+            quantized_slots = quantize_to_beat_slots(num_slots, slots_per_beat)
+            width = self.grid.slots_to_pixels(quantized_slots)
             row = self.midi_to_row(midi, base_midi, key_mode)
-            y = self.grid.slot_index_to_y(row)               # window Y
+            y = self.grid.slot_index_to_y(row)
 
             note = self.piano.add_note(
                 x=x,
@@ -340,8 +385,6 @@ class LoopPlacementScreen(Screen):
 
             note.start_slot = start_slot
             note.midi = midi
-            
-        # ---------------- Dragging ---------------- #
 
     def on_touch_down(self, touch):
         if super().on_touch_down(touch):
@@ -424,20 +467,16 @@ class LoopPlacementScreen(Screen):
 
         old_start_slot = self._drag_note_start_slot
 
-        # use grid to snap
         column = self.grid.x_to_slot_index(note.pos[0])
         row = self.grid.y_to_slot_index(note.pos[1])
 
-        # Calculate final MIDI from row
         final_midi = self.row_to_midi(
             row,
             self.loop_engine.get_base_midi(self.animal_id),
             self.loop_engine.get_key_mode(),
         )
 
-        # If this is a new note being added
         if old_start_slot is None:
-            # Try to add it to the grid
             success = self.loop_engine.add_loop_instance(
                 self.animal_id,
                 column,

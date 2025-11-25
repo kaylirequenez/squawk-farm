@@ -8,6 +8,7 @@ from squawkfarm.models.loop import GlobalLoopSettings
 from squawkfarm.screens.garden_screen import GardenScreen
 from squawkfarm.screens.loop_placement_screen import LoopPlacementScreen
 from squawkfarm.screens.record_screen import RecordScreen
+from squawkfarm.screens.chord_screen import ChordScreen
 from squawkfarm.services.loop_engine import LoopEngine
 
 
@@ -22,4 +23,5 @@ def build_app():
     sm.add_screen(GardenScreen(name="garden"))
     sm.add_screen(RecordScreen(name="record"))
     sm.add_screen(LoopPlacementScreen(name="loop_placement"))
+    sm.add_screen(ChordScreen(name="chord"))
     return sm

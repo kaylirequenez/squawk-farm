@@ -1,7 +1,3 @@
-import os
-import random
-from typing import Tuple, Dict, Optional
-
 from kivy.uix.image import Image
 from kivy.core.window import Window
 from kivy.clock import Clock
@@ -40,7 +36,7 @@ class SunWidget(Image):
 
         self._update_size_and_pos()
 
-    def _on_beat(self, dt: float):
+    def _on_beat(self, dt):
         self._is_large = not self._is_large
         self._update_size_and_pos()
 

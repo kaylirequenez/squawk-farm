@@ -5,7 +5,7 @@ from imslib.audio import Audio
 from imslib.writer import write_wave_file
 from squawkfarm.utils.path_utils import get_recording_wav_path
 
-def _estimate_f0_median(y: np.ndarray, sr: int) -> float:
+def _estimate_f0_median(y, sr):
     """Estimate the median fundamental frequency of voiced audio."""
     f0 = librosa.yin(
         y,
@@ -18,7 +18,7 @@ def _estimate_f0_median(y: np.ndarray, sr: int) -> float:
     return float(np.median(f0[voiced]))
 
 
-def tune_sample_and_save(animal_id: str, data: np.ndarray) -> tuple[np.ndarray, int]:
+def tune_sample_and_save(animal_id, data):
     """
     Detect pitch, tune to the nearest semitone, and save as tuned.wav.
     
@@ -45,7 +45,7 @@ def tune_sample_and_save(animal_id: str, data: np.ndarray) -> tuple[np.ndarray, 
     return y_tuned, int(target_midi)
 
 
-def tune_to_midi(data: np.ndarray, base_midi: int, target_midi: int) -> np.ndarray:
+def tune_to_midi(data, base_midi, target_midi):
     """
     Tune audio data from one MIDI note to another.
     

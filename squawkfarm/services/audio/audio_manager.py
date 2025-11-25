@@ -1,7 +1,3 @@
-from __future__ import annotations
-
-from typing import Callable, Dict, Optional, Tuple
-
 from imslib.audio import Audio
 from imslib.mixer import Mixer
 from imslib.wavegen import WaveGenerator
@@ -13,23 +9,12 @@ from squawkfarm.models.loop_runtime import Loop, Recording, RuntimeLoopInstance
 from squawkfarm.models.loop import GlobalLoopSettings
 from squawkfarm.utils import tune_to_midi
 
-# TODO: make it so callbacks must be included for initialization
+
 class AudioManager:
-    """
-    Handles audio scheduling + device:
-
-      - AudioScheduler + Mixer + Audio
-      - schedules playback of a shared `loops` dict
-      - optionally plays a Recording preview
-
-    NOTES:
-      - `loops` is a reference to the dict owned by LoopEngine.
-      - AudioManager does NOT modify loops; it only reads them to schedule audio.
-    """
-    def __init__(self, grid: Grid, loops: Dict[str, Loop], settings: GlobalLoopSettings):
+    def __init__(self, grid, loops, settings):
         self.grid = grid
-        self.loops = loops  # shared reference from LoopEngine
-        self.settings = settings  # global settings for key changes
+        self.loops = loops
+        self.settings = settings
 
         self.scheduler = AudioScheduler(self.grid.tempo_map)
         self.mixer = Mixer()
@@ -38,87 +23,63 @@ class AudioManager:
         self.audio = Audio(2)
         self.audio.set_generator(self.scheduler)
 
-        self.playing: bool = False
+        self.playing = False
+        self._on_sing = lambda aid: None
+        self._on_close = lambda aid: None
+        self.scheduled_close_events = {}
 
-        # callbacks set by LoopEngine (for mouth animations, etc.)
-        self._on_sing: Callable[[str], None] = lambda aid: None
-        self._on_close: Callable[[str], None] = lambda aid: None
+        self.current_cycle = 0
 
-        # scheduled mouth-close events (can have multiple per animal)
-        self.scheduled_close_events: Dict[str, list] = {}
+    def get_chord_info_at_slot(self, slot):
+        progression = self.settings.chord_progression
+        if not progression:
+            return 0, "maj"
 
-        self.current_cycle: int = 0
-
-    def get_global_transpose_at_slot(self, slot: int) -> int:
-        if not self.settings.key_change_offsets:
-            return 0
-
+        measure = self.grid.slot_to_measure(slot)
         total_measures = self.grid.get_total_measures()
-        measure = self.grid.slot_to_measure(slot) + (self.current_cycle * total_measures)
-        key_change_index = (measure // self.settings.key_change_interval) % len(self.settings.key_change_offsets)
-        return self.settings.key_change_offsets[key_change_index]
+        absolute_measure = measure + (self.current_cycle * total_measures)
 
-    # ------------------------------------------------------------------ #
-    # basic control
-    # ------------------------------------------------------------------ #
+        measures_per_chord = 4
+        chord_index = absolute_measure // measures_per_chord
+        chord = progression.get_chord_at_measure(chord_index)
 
-    def set_callbacks(self, on_sing: Callable[[str], None], on_close: Callable[[str], None]) -> None:
+        transpose = chord.degree - 1
+
+        return transpose, chord.quality
+
+    def set_callbacks(self, on_sing, on_close):
         self._on_sing = on_sing
         self._on_close = on_close
 
-    def on_update(self) -> None:
+    def on_update(self):
         self.audio.on_update()
 
-    def is_playing(self) -> bool:
+    def is_playing(self):
         return self.playing
 
-    def get_scheduler_time(self) -> float:
+    def get_scheduler_time(self):
         return self.scheduler.get_time()
-    
-    def set_volume(self, volume: float) -> None:
+
+    def set_volume(self, volume):
         self.mixer.set_gain(volume)
 
-    # ------------------------------------------------------------------ #
-    # loop playback
-    # ------------------------------------------------------------------ #
-
-    def play(self, start_time: float = 0.0, repeat: bool = False, animal_id: Optional[str] = None) -> None:
-        """
-        Play loops. If animal_id is provided, play only that animal's loop.
-        Otherwise, play ALL loops currently in `self.loops`.
-        """
+    def play(self, start_time=0.0, repeat=False, animal_id=None):
         self.playing = True
         self.current_cycle = 0
         self._schedule_cycle(start_time, repeat, animal_id)
 
-    def pause(self, _tick: Optional[int] = None) -> None:
-        """
-        Stop playback immediately.
-        """
+    def pause(self, _tick=None):
         self.scheduler.commands.clear()
         self.mixer.generators.clear()
         self.playing = False
 
-        # cancel scheduled mouth-closes
         for animal_id, events in self.scheduled_close_events.items():
             for event in events:
                 Clock.unschedule(event)
             self._on_close(animal_id)
         self.scheduled_close_events.clear()
 
-    # ------------------------------------------------------------------ #
-    # recording preview playback
-    # ------------------------------------------------------------------ #
-
-    def play_recording(
-        self,
-        recording: Recording,
-        offset: float = 0.0,
-        repeat: bool = False,
-    ) -> None:
-        """
-        Play a single Recording object.
-        """
+    def play_recording(self, recording, offset=0.0, repeat=False):
         gen = recording.get_generator(self.grid.time_to_frame(offset), repeat)
         self.mixer.add(gen)
         self.playing = True
@@ -132,11 +93,7 @@ class AudioManager:
                 self.grid.tempo_map.time_to_tick(end_time),
             )
 
-    # ------------------------------------------------------------------ #
-    # internal scheduling for loops
-    # ------------------------------------------------------------------ #
-
-    def _schedule_cycle(self, start_time: float, repeat: bool, filter_animal_id: Optional[str] = None) -> None:
+    def _schedule_cycle(self, start_time, repeat, filter_animal_id=None):
         now = self.scheduler.get_tick()
         loop_ticks = self.grid.slot_to_tick(self.grid.get_total_slots())
         tick_offset = self.grid.time_to_tick(start_time)
@@ -146,7 +103,7 @@ class AudioManager:
 
         for animal_id, loop in loops_to_play.items():
             for start_slot, num_slots, _ in loop.get_instances_info(self.grid.frame_to_slot):
-                wave_generator: Optional[WaveGenerator] = None
+                wave_generator = None
                 tick = self.grid.slot_to_tick(start_slot)
                 frame_offset = 0
 
@@ -163,12 +120,12 @@ class AudioManager:
                     else:
                         continue
 
-                transpose_semitones = self.get_global_transpose_at_slot(start_slot)
+                transpose_semitones, chord_quality = self.get_chord_info_at_slot(start_slot)
 
                 self.scheduler.post_at_tick(
                     self._start_section_playback,
                     tick + now,
-                    (animal_id, start_slot, frame_offset, transpose_semitones),
+                    (animal_id, start_slot, frame_offset, transpose_semitones, chord_quality),
                 )
 
         def callback(_dt):
@@ -183,8 +140,8 @@ class AudioManager:
             loop_ticks - tick_offset + now,
         )
 
-    def _start_section_playback(self, _: int, args: Tuple[str, int, int, int]) -> None:
-        animal_id, start_slot, frame_offset, transpose_semitones = args
+    def _start_section_playback(self, _, args):
+        animal_id, start_slot, frame_offset, transpose_semitones, chord_quality = args
 
         loop = self.loops.get(animal_id)
         if not loop or start_slot not in loop.instances:
@@ -192,9 +149,23 @@ class AudioManager:
 
         instance = loop.instances[start_slot]
 
-        if transpose_semitones != 0:
-            current_midi = instance.midi
-            target_midi = current_midi + transpose_semitones
+        current_midi = instance.midi
+        target_midi = current_midi + transpose_semitones
+
+        scale_degree_in_c = current_midi % 12
+        quality_adjustment = 0
+
+        if chord_quality in ("min", "min7"):
+            if scale_degree_in_c == 4:
+                quality_adjustment = -1
+
+        if chord_quality in ("dom7", "min7"):
+            if scale_degree_in_c == 11:
+                quality_adjustment = -1
+
+        target_midi += quality_adjustment
+
+        if transpose_semitones != 0 or quality_adjustment != 0:
             transposed_data = tune_to_midi(instance.clean_data, current_midi, target_midi)
             temp_instance = RuntimeLoopInstance(transposed_data, target_midi, instance.muted_ranges)
             gen = WaveGenerator(temp_instance, False)

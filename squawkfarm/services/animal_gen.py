@@ -305,47 +305,80 @@ def pixelate_image(img, factor=4):
     return small.resize((w, h), Image.NEAREST)
 
 
-def make_shadow_layer(img, ground_y, opacity=80, squash=0.7, offset_y=3):
-    """
-    Build a separate RGBA image containing only the semi-transparent, squashed
-    reflection of the creature's silhouette below ground_y.
-    Does NOT modify the original img.
-    """
+def add_edge_shadow(img, offset_x=3, offset_y=-3, opacity=100):
     W, H = img.size
-    # Use alpha as silhouette
+    *_, a = img.split()
+
+    shadow_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    shadow_fill = Image.new("RGBA", (W, H), (0, 0, 0, opacity))
+
+    mask_shifted = Image.new("L", (W, H), 0)
+    paste_x = max(0, offset_x)
+    paste_y = max(0, -offset_y)
+    crop_x = max(0, -offset_x)
+    crop_y = max(0, offset_y)
+    crop_w = W - abs(offset_x)
+    crop_h = H - abs(offset_y)
+
+    cropped_mask = a.crop((crop_x, crop_y, crop_x + crop_w, crop_y + crop_h))
+    mask_shifted.paste(cropped_mask, (paste_x, paste_y))
+
+    shadow_layer.paste(shadow_fill, (0, 0), mask_shifted)
+
+    result = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    result.paste(shadow_layer, (0, 0), mask_shifted)
+    result.paste(img, (0, 0), a)
+
+    return result
+
+
+def make_shadow_layer(img, ground_y, opacity=45, squash=0.5, offset_y=3, skew_factor=0.4):
+    from PIL import ImageFilter
+
+    W, H = img.size
     *_, a = img.split()
 
     ground_y = int(ground_y)
     if ground_y <= 0 or ground_y >= H:
         return Image.new("RGBA", img.size, (0, 0, 0, 0))
 
-    # Alpha above the ground line (the creature itself)
     upper = a.crop((0, 0, W, ground_y))
     if upper.height <= 0:
         return Image.new("RGBA", img.size, (0, 0, 0, 0))
 
-    # Reflect vertically (x-axis reflection)
     ref = ImageOps.flip(upper)
 
-    # Squash vertically to make it less shallow / more visible
     new_h = max(1, int(ref.height * squash))
     ref = ref.resize((W, new_h), resample=Image.BILINEAR)
 
-    # Position under the ground line
-    y_paste = ground_y + offset_y
-    if y_paste >= H:
-        return Image.new("RGBA", img.size, (0, 0, 0, 0))
-    if y_paste + new_h > H:
-        crop_h = H - y_paste
-        ref = ref.crop((0, 0, W, crop_h))
-        new_h = crop_h
-        if new_h <= 0:
-            return Image.new("RGBA", img.size, (0, 0, 0, 0))
+    skew_pixels = int(new_h * skew_factor)
+    skewed_w = W + abs(skew_pixels)
+    skewed = Image.new("L", (skewed_w, new_h), 0)
 
-    shadow_layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    # Slightly lighter shadow via lower opacity
-    shadow_fill = Image.new("RGBA", (W, new_h), (0, 0, 0, opacity))
+    for row in range(new_h):
+        t = row / max(new_h - 1, 1)
+        x_offset = int(skew_pixels * t)
+        row_data = ref.crop((0, row, W, row + 1))
+        skewed.paste(row_data, (x_offset, row))
+
+    ref = skewed
+    W_shadow = skewed_w
+
+    blur_radius = max(15, int(min(W_shadow, new_h) * 0.08))
+    ref = ref.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+    y_paste = ground_y + offset_y
+    out_W = max(W, W_shadow)
+    out_H = max(H, y_paste + new_h)
+    shadow_layer = Image.new("RGBA", (out_W, out_H), (0, 0, 0, 0))
+
+    shadow_fill = Image.new("RGBA", (W_shadow, new_h), (0, 0, 0, opacity))
     shadow_layer.paste(shadow_fill, (0, y_paste), ref)
+
+    if shadow_layer.size != (W, H):
+        final = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        final.paste(shadow_layer.crop((0, 0, min(W, out_W), min(H, out_H))), (0, 0))
+        return final
 
     return shadow_layer
 def render_creature_image(
@@ -467,10 +500,11 @@ def render_creature_image(
             img = img_base
 
         shadow_layer = make_shadow_layer(
-            img, ground_y, opacity=80, squash=squash, offset_y=offset_y
+            img, ground_y, opacity=45, squash=squash, offset_y=offset_y
         )
 
         img_pix = pixelate_image(img, factor=15)
+        img_pix = add_edge_shadow(img_pix, offset_x=3, offset_y=-3, opacity=100)
         shadow_pix = pixelate_image(shadow_layer, factor=15)
 
         out_W = int(W * canvas_scale)
@@ -496,7 +530,101 @@ def render_creature_image(
         flipped = ImageOps.mirror(framed)
         flipped.save(left_path)
 
-        flipped_shadow = ImageOps.mirror(framed_shadow)
-        flipped_shadow.save(left_shadow_path)
+        flipped_img = ImageOps.mirror(img)
+        left_shadow_layer = make_shadow_layer(
+            flipped_img, ground_y, opacity=45, squash=squash, offset_y=offset_y
+        )
+        left_shadow_pix = pixelate_image(left_shadow_layer, factor=15)
+
+        if canvas_scale != 1.0:
+            framed_left_shadow = Image.new("RGBA", (out_W, out_H), (0, 0, 0, 0))
+            framed_left_shadow.paste(left_shadow_pix, (ox, oy))
+        else:
+            framed_left_shadow = left_shadow_pix
+
+        framed_left_shadow.save(left_shadow_path)
 
     return closed_path, open_path
+
+
+def add_edge_shadow_to_eggs(ui_assets_dir):
+    for egg_num in [1, 2, 3]:
+        egg_path = os.path.join(ui_assets_dir, f"egg{egg_num}.png")
+
+        if not os.path.exists(egg_path):
+            continue
+
+        egg_img = Image.open(egg_path).convert("RGBA")
+        egg_with_shadow = add_edge_shadow(egg_img, offset_x=3, offset_y=-3, opacity=100)
+        egg_with_shadow.save(egg_path)
+
+
+def generate_egg_shadows(ui_assets_dir):
+    from PIL import ImageFilter
+
+    for egg_num in [1, 2, 3]:
+        egg_path = os.path.join(ui_assets_dir, f"egg{egg_num}.png")
+        shadow_path = os.path.join(ui_assets_dir, f"egg{egg_num}_shadow.png")
+
+        if not os.path.exists(egg_path):
+            continue
+
+        egg_img = Image.open(egg_path).convert("RGBA")
+        W, H = egg_img.size
+
+        *_, a = egg_img.split()
+        a_arr = np.array(a)
+
+        rows_with_content = np.where(a_arr.max(axis=1) > 0)[0]
+        if len(rows_with_content) == 0:
+            continue
+
+        top_row = rows_with_content[0]
+        bottom_row = rows_with_content[-1]
+        egg_content_h = bottom_row - top_row + 1
+
+        squash = 0.4
+        skew_factor = 0.5
+        opacity = 45
+
+        new_h = max(1, int(egg_content_h * squash))
+
+        egg_alpha_cropped = a.crop((0, top_row, W, bottom_row + 1))
+        ref = ImageOps.flip(egg_alpha_cropped)
+        ref = ref.resize((W, new_h), resample=Image.BILINEAR)
+
+        skew_pixels = int(new_h * skew_factor)
+        skewed_w = W + abs(skew_pixels)
+        skewed = Image.new("L", (skewed_w, new_h), 0)
+
+        for row in range(new_h):
+            t = row / max(new_h - 1, 1)
+            x_offset = int(skew_pixels * t)
+            row_data = ref.crop((0, row, W, row + 1))
+            skewed.paste(row_data, (x_offset, row))
+
+        blur_radius = max(15, int(min(skewed_w, new_h) * 0.08))
+        mask = skewed.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+        shadow_y = bottom_row - new_h + 5
+
+        shadow_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        shadow_fill = Image.new("RGBA", (skewed_w, new_h), (0, 0, 0, opacity))
+
+        paste_x = 0
+        paste_y = max(0, shadow_y)
+
+        if paste_y + new_h > H:
+            crop_h = H - paste_y
+            shadow_fill = shadow_fill.crop((0, 0, skewed_w, crop_h))
+            mask = mask.crop((0, 0, skewed_w, crop_h))
+
+        if paste_x + skewed_w > W:
+            crop_w = W - paste_x
+            shadow_fill = shadow_fill.crop((0, 0, crop_w, shadow_fill.height))
+            mask = mask.crop((0, 0, crop_w, mask.height))
+
+        shadow_layer.paste(shadow_fill, (paste_x, paste_y), mask)
+
+        shadow_layer = pixelate_image(shadow_layer, factor=15)
+        shadow_layer.save(shadow_path)

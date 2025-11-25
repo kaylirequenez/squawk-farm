@@ -1,6 +1,3 @@
-"""Composer class for managing musical context and roles."""
-from typing import Dict, Set
-
 from squawkfarm.models.progression import ChordProgression
 
 MIN_ROOT = 48   # C3
@@ -8,36 +5,19 @@ MAX_ROOT = 72   # C5
 
 
 class Composer:
-    """
-    Musical context and role logic.
-
-    Keeps track of:
-      - key_mode ('major' or 'minor')
-      - root (MIDI note, global tonic)
-      - chord_progression
-      - counts of animals in each role
-    """
-
-    def __init__(self, key_mode: str, root: int, chord_progression: ChordProgression):
+    def __init__(self, key_mode, root, chord_progression):
         self.key_mode = key_mode
         self.root = max(MIN_ROOT, min(MAX_ROOT, root))
         self.chord_progression = chord_progression
 
-        self.animals_by_role: Dict[str, Set[str]] = {
+        self.animals_by_role = {
             "bass": set(),
             "melody": set(),
             "harmony": set(),
             "percussion": set(),
         }
 
-    # ------------------------------------------------------------------ #
-    # internal helpers
-    # ------------------------------------------------------------------ #
-    
-    def _choose_initial_root(self, base_midi: int) -> int:
-        """
-        Choose global root as the nearest C to base_midi, clamped to [C3, C5].
-        """
+    def _choose_initial_root(self, base_midi):
         c_down = base_midi - (base_midi % 12)
         c_up = c_down + 12
 
@@ -45,20 +25,11 @@ class Composer:
             nearest_c = c_down
         else:
             nearest_c = c_up
-            
-        print("Initial root chosen:", nearest_c)
 
         return max(MIN_ROOT, min(MAX_ROOT, nearest_c))
 
-    def _guess_role_from_pitch(self, animal_midi: int, root_midi: int) -> str:
-        """
-        Basic pitch-based role guess:
-
-          - bass: more than a fourth below root
-          - melody: a fifth or more above root
-          - otherwise: harmony
-        """
-        offset = animal_midi - root_midi  # in semitones
+    def _guess_role_from_pitch(self, animal_midi, root_midi):
+        offset = animal_midi - root_midi
 
         if offset <= -5:
             return "bass"
@@ -67,36 +38,28 @@ class Composer:
         else:
             return "harmony"
 
-    # ------------------------------------------------------------------ #
-    # public API
-    # ------------------------------------------------------------------ #
-
-    def set_key_mode(self, key_mode: str) -> None:
+    def set_key_mode(self, key_mode):
         self.key_mode = key_mode
 
-    def set_root(self, root: int) -> None:
+    def set_root(self, root):
         self.root = max(MIN_ROOT, min(MAX_ROOT, root))
 
-    def set_chord_progression(self, progression: ChordProgression) -> None:
+    def set_chord_progression(self, progression):
         self.chord_progression = progression
 
-    def register_animal_role(self, animal_id: str, role: str) -> None:
+    def register_animal_role(self, animal_id, role):
         self.animals_by_role[role].add(animal_id)
 
-    def unregister_animal_role(self, animal_id: str, role: str) -> None:
+    def unregister_animal_role(self, animal_id, role):
         self.animals_by_role[role].discard(animal_id)
 
-    def change_animal_role(self, animal_id: str, old_role: str, new_role: str) -> None:
+    def change_animal_role(self, animal_id, old_role, new_role):
         if old_role == new_role:
             return
         self.unregister_animal_role(animal_id, old_role)
         self.register_animal_role(animal_id, new_role)
 
-    def guess_initial_role(self, animal_midi: int, beats: int) -> str:
-        """
-        Guess an initial role using pitch + loop length + current role counts.
-        This is the old guess_initial_role logic, just moved here.
-        """
+    def guess_initial_role(self, animal_midi, beats):
         base_role = self._guess_role_from_pitch(animal_midi, self.root)
 
         bass_count   = len(self.animals_by_role.get("bass"))
@@ -113,19 +76,11 @@ class Composer:
         if base_role == "bass" and bass_count >= 2 and -7 <= offset:
             return "harmony"
 
-        # If melody is over-represented, push borderline highs toward harmony
         if base_role == "melody" and melody_count >= 3 and offset <= 10:
             return "harmony"
 
-        # TODO: percussion later
-        print("Initial role guessed:", base_role)
-
         return base_role
-    
-    def handle_first_animal_if_needed(self, base_midi: int) -> None:
-        """
-        If this is the very first animal, adjust global root based on its pitch.
-        """
+
+    def handle_first_animal_if_needed(self, base_midi):
         if all(len(s) == 0 for s in self.animals_by_role.values()):
             self.root = self._choose_initial_root(base_midi)
-            print("Global root set to:", self.root)

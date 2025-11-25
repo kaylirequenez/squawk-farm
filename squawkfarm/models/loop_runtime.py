@@ -1,22 +1,15 @@
-from typing import Dict, List, Optional, Tuple, Callable
-import numpy as np
-
 from imslib.wavegen import WaveGenerator
 from imslib.wavesrc import WaveBuffer, WaveFile
 
-from squawkfarm.models.loop import LoopInstance
 from squawkfarm.utils import tune_to_midi
 
 class RuntimeLoopInstance(object):
-    """
-    Runtime per-loop-instance data with audio buffer and muting information.
-    """
-    def __init__(self, data: np.ndarray, midi: int, muted_ranges: list[tuple[int, int]] = []):
+    def __init__(self, data, midi, muted_ranges=None):
         super(RuntimeLoopInstance, self).__init__()
         self.muted_ranges = muted_ranges if muted_ranges else []
         self.set_buffer(data, midi)
 
-    def set_buffer(self, data: np.ndarray, midi: int) -> None:
+    def set_buffer(self, data, midi):
         self.clean_data = data.copy()
         self.data = data.copy()
         self.midi = midi
@@ -26,26 +19,24 @@ class RuntimeLoopInstance(object):
         for start_frame, end_frame in self.muted_ranges:
             self.data[start_frame:end_frame] = 0
         
-    def get_frames(self, start_frame: int, num_frames: int) -> np.ndarray:
+    def get_frames(self, start_frame, num_frames):
         return self.data[start_frame:start_frame + num_frames]
-    
-    def get_num_channels(self) -> int:
+
+    def get_num_channels(self):
         return self.num_channels
 
-    def toggle_mute(self, start_frame: int, end_frame: int, mute: bool) -> None:
+    def toggle_mute(self, start_frame, end_frame, mute):
         start_frame = max(0, start_frame)
         end_frame = min(self.num_frames, end_frame)
 
         if mute:
             self.data[start_frame:end_frame] = 0
-            # Add and merge overlapping ranges
             self._add_muted_range(start_frame, end_frame)
         else:
             self.data[start_frame:end_frame] = self.clean_data[start_frame:end_frame]
-            # Remove the range
             self._remove_muted_range(start_frame, end_frame)
 
-    def _add_muted_range(self, start_frame: int, end_frame: int) -> None:
+    def _add_muted_range(self, start_frame, end_frame):
         i, overlap = 0, False
         while not overlap and i < len(self.muted_ranges):
             existing_start, existing_end = self.muted_ranges[i]
@@ -53,7 +44,6 @@ class RuntimeLoopInstance(object):
                 j = i + 1
                 while j < len(self.muted_ranges) and end_frame >= self.muted_ranges[j][0]:
                     j += 1
-                # Merge all overlapping ranges from i to j-1
                 end_frame = max(end_frame, self.muted_ranges[j - 1][1])
                 self.muted_ranges[i:j] = [(existing_start, end_frame)]
                 overlap = True
@@ -63,10 +53,7 @@ class RuntimeLoopInstance(object):
         if not overlap:
             self.muted_ranges.insert(i, (start_frame, end_frame))
 
-    def _remove_muted_range(self, start_frame: int, end_frame: int) -> None:
-        """
-        Remove a muted range, splitting existing ranges if necessary.
-        """
+    def _remove_muted_range(self, start_frame, end_frame):
         first_index = None
         last_index = None
         for i, (existing_start, existing_end) in enumerate(self.muted_ranges):
@@ -74,7 +61,6 @@ class RuntimeLoopInstance(object):
                 if existing_start == start_frame:
                     first_index = i
                 else:
-                    # keep left part by shortening this range's end
                     first_index = i + 1
                     left_start, _ = self.muted_ranges[i]
                     self.muted_ranges[i] = (left_start, start_frame)
@@ -83,10 +69,8 @@ class RuntimeLoopInstance(object):
                 last_index = i - 1
                 _, right_end = self.muted_ranges[last_index]
                 if right_end == end_frame:
-                    # entire last range is removed
                     last_index = i
                 else:
-                    # keep right part by moving its start
                     self.muted_ranges[last_index] = (end_frame, right_end)
                 break
 
@@ -96,47 +80,43 @@ class RuntimeLoopInstance(object):
 
 
 class Recording(object):
-    """
-    Original recording with possible trimmed margins.
-    """
-    def __init__(self, audio_path: str, start_frame: int = 0, num_frames: Optional[int] = None):
+    def __init__(self, audio_path, start_frame=0, num_frames=None):
         super(Recording, self).__init__()
         self.audio_path = audio_path
         wf = WaveFile(audio_path)
-        self.last_frame = wf.end  # total frames in file
+        self.last_frame = wf.end
 
         self.start_frame = start_frame
         num_frames = num_frames if num_frames is not None else self.last_frame - start_frame
 
         self.trimmed = WaveBuffer(audio_path, self.start_frame, num_frames)
 
-    def get_num_frames(self) -> int:
+    def get_num_frames(self):
         return self.trimmed.get_num_frames()
 
-    def get_generator(self, frame_offset: int = 0, loop: bool = False) -> WaveGenerator:
+    def get_generator(self, frame_offset=0, loop=False):
         gen = WaveGenerator(self.trimmed, loop)
 
         gen.frame = frame_offset
         gen.set_gain(0.5)
         return gen
 
-    def set_left_margin(self, start_frame: int) -> None:
+    def set_left_margin(self, start_frame):
         shift = start_frame - self.start_frame
         self.start_frame += shift
         num_frames = self.get_num_frames() - shift
 
         self.trimmed = WaveBuffer(self.audio_path, self.start_frame, num_frames)
 
-    def set_right_margin(self, end_frame: int) -> None:
+    def set_right_margin(self, end_frame):
         num_frames = end_frame - self.start_frame
         self.trimmed = WaveBuffer(self.audio_path, self.start_frame, num_frames)
 
-    def shift(self, num_frames: int) -> None:
+    def shift(self, num_frames):
         tot = self.get_num_frames()
         new_start = self.start_frame + num_frames
         new_end = new_start + tot
 
-        # clamp to [0, last_frame]
         if new_start < 0:
             new_start = 0
         elif new_end > self.last_frame:
@@ -144,32 +124,24 @@ class Recording(object):
 
         self.trimmed = WaveBuffer(self.audio_path, new_start, tot)
 
+
 class Loop(object):
-    """
-    Runtime per-animal loop.
-    """
-    def __init__(self, audio_data: np.ndarray, start_frame: int, num_frames: int, midi: int, role: str, volume: float = 0.5, loop_instances: list[LoopInstance] = []):
+    def __init__(self, audio_data, start_frame, num_frames, midi, role, volume=1, loop_instances=None):
         super(Loop, self).__init__()
         self.current = audio_data
-
-        self.start_frame = start_frame # start frame within the recording
-        self.num_frames = num_frames # number of frames in the trimmed recording
+        self.start_frame = start_frame
+        self.num_frames = num_frames
         self.midi = midi
         self.volume = volume
         self.role = role
 
-        self.instances: Dict[int, RuntimeLoopInstance] = {}
+        self.instances = {}
+        loop_instances = loop_instances if loop_instances else []
         for loop in loop_instances:
             shifted_data = tune_to_midi(self.current, self.midi, loop.midi)
             self.instances[loop.start_slot] = RuntimeLoopInstance(shifted_data, loop.midi, loop.muted_ranges)
             
-    def _has_overlap(
-        self,
-        candidate_start: int,
-        candidate_num_slots: int,
-        frame_to_slot: Callable[[int], int],
-        ignore_start: Optional[int] = None,
-    ) -> bool:
+    def _has_overlap(self, candidate_start, candidate_num_slots, frame_to_slot, ignore_start=None):
         candidate_end = candidate_start + candidate_num_slots
 
         for start_slot, num_slots, _ in self.get_instances_info(frame_to_slot):
@@ -179,23 +151,22 @@ class Loop(object):
             existing_start = start_slot
             existing_end = start_slot + num_slots
 
-            # intervals overlap if they are NOT (disjoint on left or right)
             if not (candidate_end <= existing_start or candidate_start >= existing_end):
                 return True
 
         return False
 
-    def get_num_frames(self, slot: int) -> int:
+    def get_num_frames(self, slot):
         return self.instances[slot].num_frames
-    
-    def get_instance_info(self, start_slot: int, frame_to_slot: Callable[[int], int]) -> Tuple[int, int]:
+
+    def get_instance_info(self, start_slot, frame_to_slot):
         instance = self.instances[start_slot]
         return (frame_to_slot(instance.num_frames), instance.midi)
 
-    def get_instances_info(self, frame_to_slot: Callable[[int], int]) -> List[Tuple[int, int, int]]:
+    def get_instances_info(self, frame_to_slot):
         return [(start_slot, frame_to_slot(instance.num_frames), instance.midi) for start_slot, instance in self.instances.items()]
 
-    def get_generator(self, start_slot: int, frame_offset: int = 0, loop: bool = False) -> WaveGenerator:
+    def get_generator(self, start_slot, frame_offset=0, loop=False):
         instance = self.instances[start_slot]
         gen = WaveGenerator(instance, loop)
 
@@ -204,14 +175,14 @@ class Loop(object):
 
         return gen
 
-    def set_volume(self, volume: float) -> None:
+    def set_volume(self, volume):
         self.volume = max(0.0, min(1.0, volume))
 
-    def set_pitch(self, start_slot: int, midi: int) -> None:
+    def set_pitch(self, start_slot, midi):
         shifted_data = tune_to_midi(self.current, self.midi, midi)
         self.instances[start_slot].set_buffer(shifted_data, midi)
-        
-    def add_to_grid(self, start_slot: int, frame_to_slot: Callable[[int], int], overlap: bool = False, midi: Optional[int] = None) -> bool:
+
+    def add_to_grid(self, start_slot, frame_to_slot, overlap=False, midi=None):
         if start_slot in self.instances or (not overlap and self._has_overlap(start_slot, frame_to_slot(self.num_frames), frame_to_slot)):
             return False
         
@@ -220,13 +191,7 @@ class Loop(object):
         self.instances[start_slot] = RuntimeLoopInstance(shifted_data, midi)
         return True
 
-    def slide(
-        self,
-        old_start_slot: int,
-        new_start_slot: int,
-        frame_to_slot: Callable[[int], int],
-        overlap: bool = False,
-    ) -> int:
+    def slide(self, old_start_slot, new_start_slot, frame_to_slot, overlap=False):
         if new_start_slot in self.instances:
             return old_start_slot
         
@@ -238,7 +203,7 @@ class Loop(object):
         self.instances[new_start_slot] = self.instances.pop(old_start_slot)
         return new_start_slot
     
-    def toggle_mute(self, start_slot: int, frame_1: int, frame_2: int, mute: bool) -> None:
+    def toggle_mute(self, start_slot, frame_1, frame_2, mute):
         if frame_1 > frame_2:
             frame_1, frame_2 = frame_2, frame_1
         self.instances[start_slot].toggle_mute(frame_1, frame_2, mute)
