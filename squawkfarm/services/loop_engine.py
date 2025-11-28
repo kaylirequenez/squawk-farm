@@ -223,13 +223,42 @@ class LoopEngine:
         if not loop:
             return
 
-        loop.midi = max(0, min(127, loop.midi + semitones))
+        # Check if the shift is possible without clamping any instances
+        min_instance_midi = min((instance.midi for instance in loop.instances.values()), default=loop.midi)
+        max_instance_midi = max((instance.midi for instance in loop.instances.values()), default=loop.midi)
+        
+        # Also include base MIDI in the range check
+        min_midi = min(min_instance_midi, loop.midi)
+        max_midi = max(max_instance_midi, loop.midi)
+        
+        # Calculate what the new min/max would be
+        new_min = min_midi + semitones
+        new_max = max_midi + semitones
+        
+        print(f"[shift_animal_octave] {animal_id}: current range [{min_midi}, {max_midi}], base={loop.midi}, semitones={semitones}, would result in [{new_min}, {new_max}]")
+        
+        # If the shift would push any MIDI value out of bounds, don't do it
+        if new_min < 0 or new_max > 127:
+            print(f"[shift_animal_octave] BLOCKED: Cannot shift {animal_id} by {semitones}: would result in MIDI range [{new_min}, {new_max}]")
+            return
 
+        print(f"[shift_animal_octave] ALLOWED: Shifting {animal_id} by {semitones}")
+        
+        # IMPORTANT: Keep the old base_midi before updating
+        old_base_midi = loop.midi
+        
+        # Update all instances FIRST using the old base_midi
         for start_slot in list(loop.instances.keys()):
             instance = loop.instances[start_slot]
+            old_midi = instance.midi
             new_midi = instance.midi + semitones
-            new_midi = max(0, min(127, new_midi))
+            # set_pitch uses loop.midi internally, so it must be the OLD base_midi
             loop.set_pitch(start_slot, new_midi)
+            print(f"[shift_animal_octave] slot {start_slot}: {old_midi} → {new_midi}")
+        
+        # THEN update base MIDI after all instances are updated
+        loop.midi = old_base_midi + semitones
+        print(f"[shift_animal_octave] base_midi updated: {old_base_midi} → {loop.midi}")
 
     def mute_instance_slots(self, animal_id, start_slot, slot_1, slot_2, mute):
         loop = self.loops[animal_id]
@@ -325,20 +354,50 @@ class LoopEngine:
         pitch_map = {}
         current_note_index = closest_index
         is_first_animal = len(self.loops) == 1
+        
+        # Track the range of notes we generate
+        min_note_index = closest_index
+        max_note_index = closest_index
+        generated_notes = []
 
         for s in start_slots:
             if is_first_animal and s == 0:
                 pitch_map[s] = pentatonic_notes[current_note_index]
+                generated_notes.append(pentatonic_notes[current_note_index])
+                min_note_index = min(min_note_index, current_note_index)
+                max_note_index = max(max_note_index, current_note_index)
                 step = random.choice([-1, 0, 1, 1])
                 current_note_index = max(0, min(len(pentatonic_notes) - 1, current_note_index + step))
             elif random.random() < 0.7:
                 pitch_map[s] = pentatonic_notes[current_note_index]
+                generated_notes.append(pentatonic_notes[current_note_index])
+                min_note_index = min(min_note_index, current_note_index)
+                max_note_index = max(max_note_index, current_note_index)
                 step = random.choice([-1, 0, 1, 1])
                 current_note_index = max(0, min(len(pentatonic_notes) - 1, current_note_index + step))
             else:
                 pitch_map[s] = None
 
+        # Adjust base_midi to center the generated notes on the visible range
+        # The display shows 8 rows (0-7), where row 0 is the lowest and row 7 is the highest
+        # We want the minimum generated note to appear around row 0-1 and max around row 6-7
+        min_generated_note = min(generated_notes) if generated_notes else base_midi
+        max_generated_note = max(generated_notes) if generated_notes else base_midi
+        note_range = max_generated_note - min_generated_note
+        
+        print(f"[_generate_pitch_map_for_animal] Generated notes: min={min_generated_note}, max={max_generated_note}, range={note_range}")
+        print(f"[_generate_pitch_map_for_animal] Original base_midi={base_midi}, pitch_map={pitch_map}")
+        
+        # Set base_midi to the minimum generated note (or slightly below it)
+        # This ensures the lowest note appears near the bottom of the display
+        new_base_midi = min_generated_note
+        if new_base_midi != base_midi:
+            print(f"[_generate_pitch_map_for_animal] Adjusting base_midi from {base_midi} to {new_base_midi}")
+            loop.midi = new_base_midi
+            loop.original_midi = new_base_midi
+
         return pitch_map
+
 
     def _get_existing_bass_templates(self, exclude_animal_id):
         templates = []

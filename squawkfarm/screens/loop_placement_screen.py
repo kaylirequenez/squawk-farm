@@ -44,7 +44,9 @@ MINOR_OFFSETS = [0, 2, 3, 5, 7, 8, 10, 12]
 
 def quantize_to_beat_slots(num_slots, slots_per_beat):
     beats = num_slots / slots_per_beat
-    if beats < 1.5:
+    if beats < 0.75:
+        quantized_beats = 0.5
+    elif beats < 1.5:
         quantized_beats = 1
     elif beats < 3.0:
         quantized_beats = 2
@@ -118,7 +120,7 @@ class LoopPlacementScreen(Screen):
             size=(self.octave_btn_size, self.octave_btn_size),
             pos=(Window.width - 110, Window.height - self.octave_btn_size - 10),
         )
-        self.octave_up_button.bind(on_press=self._on_octave_up_press)
+        self.octave_up_button.bind(on_touch_down=self._on_octave_up_touch_down, on_touch_up=self._on_octave_up_touch_up)
 
         self.octave_down_button = ImageButton(
             source=self.down_icon_path,
@@ -126,7 +128,7 @@ class LoopPlacementScreen(Screen):
             size=(self.octave_btn_size, self.octave_btn_size),
             pos=(Window.width - 220, Window.height - self.octave_btn_size - 10),
         )
-        self.octave_down_button.bind(on_press=self._on_octave_down_press)
+        self.octave_down_button.bind(on_touch_down=self._on_octave_down_touch_down, on_touch_up=self._on_octave_down_touch_up)
 
         self.add_button = ShadowButton(
             text="[b]Add[/b]",
@@ -163,6 +165,11 @@ class LoopPlacementScreen(Screen):
         self._hammer_widget = None
         self._dragging_hammer = False
         self._hammer_offset = (0.0, 0.0)
+        
+        # Octave shifting state
+        self._octave_shift_active = False
+        self._octave_shift_direction = 0  # 1 for up, -1 for down
+        self._octave_shift_event = None
 
     def _add_button_widgets(self):
         self.add_widget(self.sample_button)
@@ -246,6 +253,7 @@ class LoopPlacementScreen(Screen):
         Window.unbind(on_key_down=self._on_keyboard_down)
 
         self._remove_button_widgets()
+        self._stop_continuous_octave_shift()
         self.loop_engine.pause()
 
         if self._adding_note and self._new_note:
@@ -275,17 +283,71 @@ class LoopPlacementScreen(Screen):
         self.loop_engine.pause()
         self.loop_engine.play(animal_id=self.animal_id)
 
-    def _on_octave_up_press(self, *_):
-        self.loop_engine.shift_animal_octave(self.animal_id, 12)
-        self._rebuild_piano_from_engine()
-        self.loop_engine.pause()
-        self.loop_engine.play(animal_id=self.animal_id)
+    def _on_octave_up_touch_down(self, button, touch):
+        print(f"[_on_octave_up_touch_down] Called")
+        if button.collide_point(*touch.pos):
+            self._octave_shift_active = True
+            self._octave_shift_direction = 1
+            self._start_continuous_octave_shift()
+            return True
+        return False
 
-    def _on_octave_down_press(self, *_):
-        self.loop_engine.shift_animal_octave(self.animal_id, -12)
+    def _on_octave_up_touch_up(self, button, touch):
+        print(f"[_on_octave_up_touch_up] Called")
+        self._octave_shift_active = False
+        self._stop_continuous_octave_shift()
+        return True
+
+    def _on_octave_down_touch_down(self, button, touch):
+        print(f"[_on_octave_down_touch_down] Called")
+        if button.collide_point(*touch.pos):
+            self._octave_shift_active = True
+            self._octave_shift_direction = -1
+            self._start_continuous_octave_shift()
+            return True
+        return False
+
+    def _on_octave_down_touch_up(self, button, touch):
+        self._octave_shift_active = False
+        self._stop_continuous_octave_shift()
+        return True
+
+    def _start_continuous_octave_shift(self):
+        """Schedule continuous octave shifting"""
+        from kivy.clock import Clock
+        
+        print(f"[_start_continuous_octave_shift] Starting with direction={self._octave_shift_direction}")
+        
+        # Cancel any existing scheduled event
+        if self._octave_shift_event:
+            print(f"[_start_continuous_octave_shift] Canceling existing event")
+            self._octave_shift_event.cancel()
+        
+        # Perform first shift immediately
+        self._do_octave_shift()
+        
+        # Then schedule repeated shifts every 0.1 seconds
+        self._octave_shift_event = Clock.schedule_interval(
+            lambda dt: self._do_octave_shift(),
+            0.1
+        )
+        print(f"[_start_continuous_octave_shift] Scheduled repeat shifts")
+
+    def _stop_continuous_octave_shift(self):
+        """Cancel continuous octave shifting"""
+        if self._octave_shift_event:
+            self._octave_shift_event.cancel()
+            self._octave_shift_event = None
+
+    def _do_octave_shift(self):
+        """Perform a single octave shift"""
+        semitones = self._octave_shift_direction * 12
+        print(f"[_do_octave_shift] Starting octave shift: direction={self._octave_shift_direction}, semitones={semitones}")
+        self.loop_engine.shift_animal_octave(self.animal_id, semitones)
         self._rebuild_piano_from_engine()
         self.loop_engine.pause()
         self.loop_engine.play(animal_id=self.animal_id)
+        print(f"[_do_octave_shift] Completed")
 
     def _on_add_press(self, *_):
         if self._adding_note:
@@ -353,9 +415,11 @@ class LoopPlacementScreen(Screen):
         return octave_c + offsets[row]
 
     def midi_to_row(self, midi, base_midi, key_mode):
-        octave_c = get_octave_c_for_animal(base_midi)
         offsets = MAJOR_OFFSETS if key_mode == "major" else MINOR_OFFSETS
-        semitone_offset = midi - octave_c
+        # Calculate semitone offset from the base_midi, not from octave_c
+        # This way notes display relative to the base note
+        semitone_offset = midi - base_midi
+        # Find the best matching row in the scale
         row = min(range(8), key=lambda i: abs(offsets[i] - semitone_offset))
         return row
 
@@ -368,6 +432,9 @@ class LoopPlacementScreen(Screen):
         base_midi = self.loop_engine.get_base_midi(self.animal_id)
         key_mode = self.loop_engine.get_key_mode()
         slots_per_beat = self.loop_engine.get_slots_per_beat()
+        
+        midi_values = [midi for _, _, midi in instances]
+        print(f"[_rebuild_piano_from_engine] base_midi={base_midi}, key_mode={key_mode}, all instance MIDIs={midi_values}")
 
         for start_slot, num_slots, midi in instances:
             x = self.grid.slot_index_to_x(start_slot)

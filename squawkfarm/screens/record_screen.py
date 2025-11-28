@@ -142,6 +142,7 @@ class RecordScreen(Screen):
         self.add_loop_btn.bind(on_release=self._add_animal)
 
         self.sample_sizes = {
+            "Super Small": 0.5,
             "Small": 1,
             "Medium": 2,
             "Large": 4

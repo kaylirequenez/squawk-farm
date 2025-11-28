@@ -132,6 +132,7 @@ class Loop(object):
         self.start_frame = start_frame
         self.num_frames = num_frames
         self.midi = midi
+        self.original_midi = midi  # Track the original MIDI for tuning reference
         self.volume = volume
         self.role = role
 
@@ -179,8 +180,10 @@ class Loop(object):
         self.volume = max(0.0, min(1.0, volume))
 
     def set_pitch(self, start_slot, midi):
-        shifted_data = tune_to_midi(self.current, self.midi, midi)
+        # Always tune from the ORIGINAL base_midi, not the current (shifted) base_midi
+        shifted_data = tune_to_midi(self.current, self.original_midi, midi)
         self.instances[start_slot].set_buffer(shifted_data, midi)
+
 
     def add_to_grid(self, start_slot, frame_to_slot, overlap=False, midi=None):
         if start_slot in self.instances or (not overlap and self._has_overlap(start_slot, frame_to_slot(self.num_frames), frame_to_slot)):
