@@ -528,6 +528,9 @@ class RecordScreen(Screen):
             return super(RecordScreen, self).on_touch_down(touch)
 
         MARKER_TOLERANCE = 30
+        
+        if self.grid.y - MARKER_TOLERANCE > touch.y or self.grid.y + self.grid.height + MARKER_TOLERANCE < touch.y:
+            return super(RecordScreen, self).on_touch_down(touch)
 
         if abs(touch.x - self.left_marker_x) < MARKER_TOLERANCE:
             self.dragging_marker = "left"
