@@ -3,7 +3,29 @@ import numpy as np
 import librosa
 from imslib.audio import Audio
 from imslib.writer import write_wave_file
+from imslib.wavegen import convert_channels
 from squawkfarm.utils.path_utils import get_recording_wav_path
+
+
+def ensure_mono_audio(audio_data, num_channels):
+    """
+    Convert audio data to mono if it's stereo.
+    Uses the existing convert_channels function from imslib.wavegen.
+    
+    :param audio_data: Numpy array of audio data (interleaved if stereo).
+    :param num_channels: Number of channels in the audio data.
+    :returns: Mono audio data as numpy array.
+    """
+    if num_channels == 1:
+        return audio_data
+    elif num_channels == 2:
+        # Convert stereo to mono by averaging channels
+        return convert_channels(audio_data, 2, 1)
+    else:
+        # For other channel counts, average all channels
+        print(f"[ensure_mono_audio] Converting {num_channels} channels to mono")
+        return convert_channels(audio_data, num_channels, 1)
+
 
 def _estimate_f0_median(y, sr):
     """Estimate the median fundamental frequency of voiced audio."""
@@ -18,14 +40,21 @@ def _estimate_f0_median(y, sr):
     return float(np.median(f0[voiced]))
 
 
-def tune_sample_and_save(animal_id, data):
+def tune_sample_and_save(animal_id, data, num_channels=1):
     """
     Detect pitch, tune to the nearest semitone, and save as tuned.wav.
     
     :param animal_id: The animal's unique identifier.
-    :param data: Audio data as numpy array.
+    :param data: Audio data as numpy array (may be stereo).
+    :param num_channels: Number of channels in the audio data (default 1 for mono).
     :returns: Tuple of (tuned_audio_data, detected_midi_note).
     """
+    # Convert to mono if stereo
+    if num_channels != 1:
+        print(f"[tune_sample_and_save] Converting {num_channels}-channel audio to mono")
+        data = ensure_mono_audio(data, num_channels)
+    
+    input_len = len(data)
     # Detect pitch and tune to nearest semitone
     f0 = _estimate_f0_median(data, Audio.sample_rate)
     if f0 > 0:
@@ -37,6 +66,10 @@ def tune_sample_and_save(animal_id, data):
         # No pitch detected, use original and default to middle C
         # TODO: ask them to re-record
         raise ValueError("No pitch detected")
+    
+    output_len = len(y_tuned)
+    if input_len != output_len:
+        print(f"[tune_sample_and_save] WARNING: Length changed! Input: {input_len}, Output: {output_len}, n_steps: {n_steps}, src_midi: {src_midi:.2f}, target_midi: {target_midi}")
     
     # Save tuned audio
     tuned_path = get_recording_wav_path(animal_id, "tuned")
@@ -55,11 +88,16 @@ def tune_to_midi(data, base_midi, target_midi):
     :returns: Pitch-shifted audio data.
     """
     semitones = target_midi - base_midi
+    input_len = len(data)
     
     if semitones == 0:
         y_shifted = data
     else:
         y_shifted = librosa.effects.pitch_shift(data, sr=Audio.sample_rate, n_steps=semitones)
+    
+    output_len = len(y_shifted)
+    if input_len != output_len:
+        print(f"[tune_to_midi] WARNING: Length changed! Input: {input_len}, Output: {output_len}, semitones: {semitones}, base_midi: {base_midi}, target_midi: {target_midi}")
     
     return y_shifted
 

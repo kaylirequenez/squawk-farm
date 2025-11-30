@@ -357,6 +357,14 @@ class LoopPlacementScreen(Screen):
             self.loop_engine.loops[self.animal_id].num_frames
         )
         quantized_slots = quantize_to_beat_slots(loop_slots, self.loop_engine.get_slots_per_beat())
+        
+        # Debug output
+        num_frames = self.loop_engine.loops[self.animal_id].num_frames
+        slots_per_beat = self.loop_engine.get_slots_per_beat()
+        beats = loop_slots / slots_per_beat
+        quantized_beats = quantized_slots / slots_per_beat
+        print(f"[_on_add_press] num_frames={num_frames}, loop_slots={loop_slots}, beats={beats:.3f}, quantized_slots={quantized_slots}, quantized_beats={quantized_beats:.3f}")
+        
         width = self.grid.slots_to_pixels(quantized_slots)
         height = self.grid.slot_height()
 

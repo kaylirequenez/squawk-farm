@@ -133,12 +133,14 @@ class LoopEngine:
         if not self.recording:
             return
         left_frame = int(round(fraction * self.recording.last_frame))
+        print(f"[set_left_margin_of_recording] fraction={fraction:.4f}, last_frame={self.recording.last_frame}, left_frame={left_frame}")
         self.recording.set_left_margin(left_frame)
 
     def set_right_margin_of_recording(self, fraction):
         if not self.recording:
             return
         right_frame = int(round(fraction * self.recording.last_frame))
+        print(f"[set_right_margin_of_recording] fraction={fraction:.4f}, last_frame={self.recording.last_frame}, right_frame={right_frame}, num_frames={self.recording.get_num_frames()}")
         self.recording.set_right_margin(right_frame)
 
     def shift_recording(self, num_slots):
@@ -153,13 +155,38 @@ class LoopEngine:
         start_frame = self.recording.start_frame
         num_frames = self.recording.get_num_frames()
         trimmed_data = self.recording.trimmed.data
-        audio_data, base_midi = tune_sample_and_save(animal_id, trimmed_data)
+        num_channels = self.recording.trimmed.num_channels
+        
+        print(f"[finalize_animal_loop] PRE-TUNE: start_frame={start_frame}, num_frames={num_frames}, trimmed_data_len={len(trimmed_data)}, num_channels={num_channels}")
+        
+        # Pass num_channels to tune_sample_and_save so it can convert stereo to mono
+        audio_data, base_midi = tune_sample_and_save(animal_id, trimmed_data, num_channels)
         self.composer.handle_first_animal_if_needed(base_midi)
+        
+        print(f"[finalize_animal_loop] POST-TUNE: audio_data_len={len(audio_data)}, base_midi={base_midi}")
+        
+        # CRITICAL: The actual frame count is determined by the trimmed audio length
+        # For mono audio: len(audio_data) == num_frames (correct)
+        # For stereo audio: len(audio_data) == num_frames * 2 (need to account for channels)
+        # But librosa might also change the length during pitch shifting
+        # After tune_sample_and_save, audio should be mono, so divide by 1
+        actual_num_frames = len(audio_data)
+        
+        print(f"[finalize_animal_loop] FRAME COUNT: num_frames={num_frames}, actual_num_frames={actual_num_frames}, num_channels={num_channels}")
+        
+        if actual_num_frames != num_frames:
+            print(f"[finalize_animal_loop] Using actual audio frame count: {actual_num_frames}")
+            num_frames = actual_num_frames
 
         if not role:
-            slots = self.grid.frame_to_slot(num_frames)
-            beats = self.slot_to_beat(slots)
-            role = self.composer.guess_initial_role(base_midi, beats)
+            # Always use the actual trimmed num_frames to calculate beats
+            sample_rate = 44100  # Audio sample rate
+            duration_seconds = num_frames / sample_rate
+            
+            # Guess the role based on base_midi and duration
+            role = self.composer.guess_initial_role(base_midi, duration_seconds)
+            
+            print(f"[finalize_animal_loop] Final: {num_frames} frames, {duration_seconds:.3f} seconds, role={role}")
 
         self.loops[animal_id] = Loop(audio_data, start_frame, num_frames, base_midi, role)
         self.composer.register_animal_role(animal_id, role)
@@ -292,7 +319,7 @@ class LoopEngine:
             self.audio_manager.play(start_time, loop)
 
     def play_recording_preview(self, offset=0.0, repeat=False):
-        if not self.recording:
+        if self.recording is None:
             return
         self.audio_manager.play_recording(self.recording, offset, repeat)
 

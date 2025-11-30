@@ -47,3 +47,46 @@ def get_metronome_sound_path():
     Get the absolute path to the metronome sound file.
     """
     return os.path.join(_get_base_dir(), "squawkfarm", "Defualt_sounds", "Metronome.wav")
+
+def get_default_sounds_dir():
+    """
+    Return the path to the default sounds directory: squawkfarm/Defualt_sounds/.
+    """
+    return os.path.join(_get_base_dir(), "squawkfarm", "Defualt_sounds")
+
+def get_default_sound_path(sound_name):
+    """
+    Get the absolute path to a default sound file by name (without extension).
+    Sound name should be like "bass" which maps to "bass.wav".
+    """
+    default_sounds_dir = get_default_sounds_dir()
+    # Try common audio extensions
+    for ext in ['.wav', '.mp3', '.m4a']:
+        path = os.path.join(default_sounds_dir, sound_name + ext)
+        if os.path.exists(path):
+            return path
+    # If not found, default to .wav
+    return os.path.join(default_sounds_dir, sound_name + '.wav')
+
+def get_available_default_sounds():
+    """
+    Get a list of available default sounds (excluding Metronome.wav and non-WAV files).
+    Returns a list of tuples: (display_name, file_name).
+    Only includes .wav files since the audio system requires WAV format.
+    """
+    default_sounds_dir = get_default_sounds_dir()
+    sound_files = []
+    
+    if not os.path.exists(default_sounds_dir):
+        return sound_files
+    
+    for filename in sorted(os.listdir(default_sounds_dir)):
+        # Skip non-WAV files, non-audio files, and the metronome
+        if filename.lower() == 'metronome.wav' or filename.startswith('.'):
+            continue
+        if filename.lower().endswith('.wav'):
+            # Convert filename to display name (bass.wav -> "bass")
+            display_name = os.path.splitext(filename)[0]
+            sound_files.append((display_name, filename))
+    
+    return sound_files

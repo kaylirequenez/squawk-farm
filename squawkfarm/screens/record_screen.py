@@ -24,12 +24,15 @@ from squawkfarm.ui.loop_grid import LoopGrid
 from squawkfarm.services.animal_gen import render_creature_image
 from squawkfarm.models.animal import Animal
 from squawkfarm.utils import (
+    get_ui_asset_path,
     get_recording_wav_path,
     get_animal_data_dir,
     get_animal_recording_dir,
     get_metronome_sound_path,
+    get_available_default_sounds,
+    get_default_sound_path,
 )
-from squawkfarm.utils import get_animal_recording_dir, get_ui_asset_path
+from squawkfarm.models.loop_runtime import Recording
 
 class StyledSpinnerOption(SpinnerOption):
     def __init__(self, **kwargs):
@@ -167,6 +170,28 @@ class RecordScreen(Screen):
         )
         self.sample_size_spinner.bind(text=self._on_sample_size_change)
 
+        # Default sounds dropdown
+        self.default_sounds = get_available_default_sounds()
+        self.default_sound_names = [name for name, _ in self.default_sounds]
+        
+        self.default_sounds_spinner = ShadowSpinner(
+            text="[b]default menu[/b]",
+            markup=True,
+            values=self.default_sound_names if self.default_sound_names else ["(no sounds)"],
+            size_hint=(None, None),
+            size=(160, 60),
+            pos=(20 + 160 + 20, Window.height - 80),
+            disabled=False,
+            opacity=1,
+            background_normal='',
+            background_down='',
+            background_color=(1, 0.9, 0.95, 1),
+            color=(0.05, 0.05, 0.3, 1),
+            font_size=24,
+            option_cls=self._create_spinner_option_cls(),
+        )
+        self.default_sounds_spinner.bind(text=self._on_default_sound_selected)
+
         self.max_display_points = 2000
         self.samples = []
 
@@ -184,6 +209,8 @@ class RecordScreen(Screen):
         self.left_marker_x = 0
         self.right_marker_x = Window.width
         self.dragging_marker = None
+        self.skip_margin_update = False  # Flag to skip _update_recording_margins if we just set margins directly
+        self.is_default_sound = False  # Flag to indicate if current recording is a default sound
 
     def _set_editing_buttons_visible(self, visible):
         self.add_loop_btn.disabled = not visible
@@ -192,12 +219,14 @@ class RecordScreen(Screen):
         self.play_btn.opacity = 1 if visible else 0
         self.sample_size_spinner.disabled = not visible
         self.sample_size_spinner.opacity = 1 if visible else 0
+        # default_sounds_spinner is always visible, so don't change its visibility
 
     def _add_button_widgets(self):
         self.add_widget(self.record_btn)
         self.add_widget(self.play_btn)
         self.add_widget(self.add_loop_btn)
         self.add_widget(self.sample_size_spinner)
+        self.add_widget(self.default_sounds_spinner)
         self.add_widget(self.barn_btn)
 
     def _remove_button_widgets(self):
@@ -205,6 +234,7 @@ class RecordScreen(Screen):
         self.remove_widget(self.play_btn)
         self.remove_widget(self.add_loop_btn)
         self.remove_widget(self.sample_size_spinner)
+        self.remove_widget(self.default_sounds_spinner)
         self.remove_widget(self.barn_btn)
 
     def _clear_marker_lines(self):
@@ -345,11 +375,162 @@ class RecordScreen(Screen):
         self._update_marker_lines()
         self._update_recording_margins()
 
+    def _on_default_sound_selected(self, spinner, sound_name):
+        """Load a default sound into the recording"""
+        # Reset the spinner text first to avoid triggering again
+        self.default_sounds_spinner.text = "[b]default menu[/b]"
+        
+        # Find the sound file path
+        sound_path = None
+        for display_name, filename in self.default_sounds:
+            if display_name == sound_name:
+                sound_path = get_default_sound_path(display_name)
+                break
+        
+        if not sound_path or not os.path.exists(sound_path):
+            print(f"Error: Could not find default sound: {sound_name}")
+            return
+        
+        try:
+            # Create a Recording object from the default sound file
+            recording = Recording(sound_path)
+            self.loop_engine.recording = recording
+            self.loop_engine.recording_frame_count = recording.get_num_frames()
+            
+            # Load audio data for visualization
+            wav_file = WaveFile(sound_path)
+            audio_data = wav_file.get_frames(0, wav_file.end)
+            
+            # Process audio for visualization
+            self.samples.clear()
+            mono = audio_data  # Already mono from WaveFile
+            clipped = np.tanh(mono[::self.decimate] * 5.0)
+            
+            remaining = self.max_display_points
+            if clipped.size > remaining:
+                clipped = clipped[:remaining]
+            
+            self.samples.extend(float(s) for s in clipped)
+            
+            # Mark that we have a recording loaded (but not currently recording)
+            self.is_recording = False
+            self._recording_started = True
+            self._recorded_frames = recording.get_num_frames()
+            
+            # Show the editing buttons and record button
+            self._set_editing_buttons_visible(True)
+            self.record_btn.disabled = False
+            self.record_btn.source = self.pause_icon_path  # Show pause icon since we're "paused"
+            
+            # Initialize marker positions
+            self._clear_marker_lines()
+            self._update_sample_pixels()
+            
+            # For default sounds, directly calculate the frame range based on selected sample size
+            # But also ensure it fits within the grid's time span
+            num_beats = self.sample_sizes[self.current_sample_size]
+            num_frames_for_size = int(num_beats * Audio.sample_rate)
+            
+            # Get file duration first
+            file_num_frames = recording.get_num_frames()
+            
+            # Get the grid's total duration
+            grid_total_slots = self.loop_engine.grid.get_total_slots()
+            grid_total_frames = self.loop_engine.grid.slot_to_frame(grid_total_slots)
+            
+            print(f"[_on_default_sound_selected] Default sound margins:")
+            print(f"  Selected size: {self.current_sample_size} ({num_beats} beats = {num_frames_for_size} frames)")
+            print(f"  File duration: {file_num_frames} frames")
+            print(f"  Grid duration: {grid_total_frames} frames")
+            
+            # If the selected sample size would extend beyond the grid, clamp it
+            actual_num_frames = min(num_frames_for_size, grid_total_frames)
+            if actual_num_frames < num_frames_for_size:
+                print(f"  Sample size too large for grid! Clamping to {actual_num_frames} frames")
+            
+            # If file is smaller than what we want to use, use the whole file
+            if file_num_frames < actual_num_frames:
+                print(f"  File smaller than requested. Using full file: {file_num_frames} frames")
+                actual_num_frames = file_num_frames
+            
+            # Trim from the center of the file
+            start_frame = max(0, (file_num_frames - actual_num_frames) // 2)
+            end_frame = min(file_num_frames, start_frame + actual_num_frames)
+            
+            print(f"  Trimming from frame {start_frame} to {end_frame} ({end_frame - start_frame} frames)")
+            
+            # Set the margins directly using frame numbers
+            self.loop_engine.recording.set_left_margin(start_frame)
+            self.loop_engine.recording.set_right_margin(end_frame)
+            
+            # Verify the trim worked
+            actual_trimmed = self.loop_engine.recording.get_num_frames()
+            print(f"  After trim: {actual_trimmed} frames (expected {num_frames_for_size})")
+            
+            # Calculate visual marker positions from the trimmed frame region
+            # Convert frames to grid positions based on the grid's total duration
+            grid_total_slots = self.loop_engine.grid.get_total_slots()
+            grid_total_frames = self.loop_engine.grid.slot_to_frame(grid_total_slots)
+            print(f"  Grid total frames: {grid_total_frames}, Grid total slots: {grid_total_slots}")
+            
+            # Calculate what fraction of the grid each frame position represents
+            if grid_total_frames > 0:
+                left_fraction = start_frame / grid_total_frames
+                right_fraction = end_frame / grid_total_frames
+                self.left_marker_x = self.grid.x + left_fraction * self.grid.width
+                self.right_marker_x = self.grid.x + right_fraction * self.grid.width
+                print(f"  Frame {start_frame} -> fraction {left_fraction:.4f} -> pixel {self.left_marker_x:.1f}")
+                print(f"  Frame {end_frame} -> fraction {right_fraction:.4f} -> pixel {self.right_marker_x:.1f}")
+            else:
+                # If grid duration is 0 or unknown, use the file fractions as fallback
+                total_frames = recording.last_frame
+                if total_frames > 0:
+                    left_fraction = start_frame / total_frames
+                    right_fraction = end_frame / total_frames
+                    self.left_marker_x = self.grid.x + left_fraction * self.grid.width
+                    self.right_marker_x = self.grid.x + right_fraction * self.grid.width
+                    print(f"  (fallback) Using file fractions: {left_fraction:.4f} to {right_fraction:.4f}")
+            
+            # Draw the markers (using the calculated positions, not grid-centered)
+            grid_bottom = self.grid.y
+            grid_top = self.grid.y + self.grid.height
+            
+            self._clear_marker_lines()
+            self.canvas.after.add(Color(0.05, 0.05, 0.3, 1))
+            self.left_marker_line = Line(
+                points=[self.left_marker_x, grid_bottom, self.left_marker_x, grid_top],
+                width=5,
+            )
+            self.canvas.after.add(self.left_marker_line)
+            
+            self.right_marker_line = Line(
+                points=[self.right_marker_x, grid_bottom, self.right_marker_x, grid_top],
+                width=5,
+            )
+            self.canvas.after.add(self.right_marker_line)
+            
+            # Set flag so that _update_recording_margins doesn't override our carefully set margins
+            self.skip_margin_update = True
+            self.is_default_sound = True
+            
+            # Update the waveform visualization
+            self._update_wave()
+            
+            print(f"Loaded default sound: {sound_name} ({self._recorded_frames} frames)")
+        except AssertionError as e:
+            print(f"Error loading default sound {sound_name}: Sample rate mismatch or format issue")
+            print(f"Default sounds must be 16-bit WAV files with 44100 Hz sample rate")
+        except Exception as e:
+            print(f"Error loading default sound {sound_name}: {e}")
+            import traceback
+            traceback.print_exc()
+
     def _start_recording(self):
         self.samples.clear()
         self._recording_started = False
         self._recorded_frames = 0
         self._record_scheduled_event = None
+        self.is_default_sound = False  # Reset flag for recorded audio
 
         self._clear_marker_lines()
         self._set_editing_buttons_visible(False)
@@ -407,8 +588,78 @@ class RecordScreen(Screen):
         self._set_editing_buttons_visible(True)
 
     def _update_recording_margins(self):
+        # Skip if we just loaded a default sound and set margins directly
+        if self.skip_margin_update:
+            print(f"[_update_recording_margins] Skipping - default sound margins already set")
+            self.skip_margin_update = False
+            return
+        
+        # For default sounds, convert visual marker positions to frame numbers based on grid duration
+        if self.is_default_sound:
+            print(f"[_update_recording_margins] Updating default sound margins from visual markers")
+            
+            # Calculate grid duration in frames
+            grid_total_slots = self.loop_engine.grid.get_total_slots()
+            grid_total_frames = self.loop_engine.grid.slot_to_frame(grid_total_slots)
+            
+            # Convert marker pixel positions to frame positions
+            left_fraction = (self.left_marker_x - self.grid.x) / self.grid.width if self.grid.width > 0 else 0
+            right_fraction = (self.right_marker_x - self.grid.x) / self.grid.width if self.grid.width > 0 else 0
+            
+            left_frame = int(left_fraction * grid_total_frames)
+            right_frame = int(right_fraction * grid_total_frames)
+            
+            print(f"[_update_recording_margins] Markers: {self.left_marker_x:.1f} to {self.right_marker_x:.1f}")
+            print(f"[_update_recording_margins] Fractions: {left_fraction:.4f} to {right_fraction:.4f}")
+            print(f"[_update_recording_margins] Frames: {left_frame} to {right_frame}")
+            
+            # Set the recording margins
+            self.loop_engine.recording.set_left_margin(left_frame)
+            self.loop_engine.recording.set_right_margin(right_frame)
+            return
+        
         left_fraction = (self.left_marker_x - self.grid.x) / self.grid.width
         right_fraction = (self.right_marker_x - self.grid.x) / self.grid.width
+        print(f"[_update_recording_margins] left_marker_x={self.left_marker_x}, right_marker_x={self.right_marker_x}, grid.x={self.grid.x}, grid.width={self.grid.width}")
+        print(f"[_update_recording_margins] left_fraction={left_fraction:.4f}, right_fraction={right_fraction:.4f}")
+        print(f"[_update_recording_margins] sample_size={self.current_sample_size}, sample_pixels={self.sample_pixels}")
+        
+        # Check if the selected sample size is larger than the available audio
+        if self.loop_engine.recording:
+            file_frames = self.loop_engine.recording.last_frame
+            num_beats = self.sample_sizes[self.current_sample_size]
+            requested_frames = int(num_beats * Audio.sample_rate)
+            available_beats = file_frames / Audio.sample_rate
+            
+            print(f"[_update_recording_margins] Audio available: {file_frames} frames ({available_beats:.2f} sec), Requested: {requested_frames} frames ({num_beats:.1f} beats)")
+            
+            # If file is shorter than requested, snap to the largest size that fits
+            if file_frames < requested_frames:
+                print(f"[_update_recording_margins] File too short for {self.current_sample_size}!")
+                
+                # Find the largest sample size that fits in the available audio
+                best_size = "Super Small"  # Default to smallest
+                best_beats = 0.5
+                
+                print(f"[_update_recording_margins] Available audio: {available_beats:.2f} seconds. Checking which sizes fit:")
+                for size_name, size_beats in self.sample_sizes.items():
+                    fits = size_beats <= available_beats
+                    print(f"[_update_recording_margins]   {size_name}: {size_beats} beats - {fits}")
+                    if fits and size_beats > best_beats:
+                        best_size = size_name
+                        best_beats = size_beats
+                
+                print(f"[_update_recording_margins] Snapping to: {best_size} ({best_beats} beats = {int(best_beats * Audio.sample_rate)} frames)")
+                
+                # Update the spinner to show the correct size
+                self.sample_size_spinner.text = best_size
+                self.current_sample_size = best_size
+                
+                # Use the full file
+                self.loop_engine.set_left_margin_of_recording(0.0)
+                self.loop_engine.set_right_margin_of_recording(1.0)
+                return
+        
         self.loop_engine.set_left_margin_of_recording(left_fraction)
         self.loop_engine.set_right_margin_of_recording(right_fraction)
 
