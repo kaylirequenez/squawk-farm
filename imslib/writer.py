@@ -53,7 +53,7 @@ class AudioWriter(object):
         else:
             self.start()
 
-    def start(self):
+    def start(self, reset=True):
         """
         Starts recording audio frames, by accepting data from :meth:`add_audio`.
         """
@@ -61,7 +61,8 @@ class AudioWriter(object):
         if not self.active:
             print("AudioWriter: start capture")
             self.active = True
-            self.buffers = []
+            if reset:
+                self.buffers = []
 
     def stop(self, filename=None):
         """

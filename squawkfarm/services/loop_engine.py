@@ -1,13 +1,12 @@
 import librosa
 from imslib.audio import Audio
+import random
 
 from squawkfarm.models.progression import ChordProgression
-from squawkfarm.models.loop import GlobalLoopSettings
 from squawkfarm.models.loop_runtime import Loop, Recording
 from squawkfarm.services.audio.grid import Grid
 from squawkfarm.services.audio.audio_manager import AudioManager
 from squawkfarm.services.composition.composer import Composer
-from squawkfarm.services.composition.rhythm import generate_beats
 from squawkfarm.utils import tune_sample_and_save, get_recording_wav_path
 
 class LoopEngine:
@@ -132,13 +131,15 @@ class LoopEngine:
     def set_left_margin_of_recording(self, fraction):
         if not self.recording:
             return
-        left_frame = int(round(fraction * self.recording.last_frame))
+        left_frame = round(fraction * self.recording.last_frame)
+        print("fraction", fraction)
         self.recording.set_left_margin(left_frame)
 
     def set_right_margin_of_recording(self, fraction):
         if not self.recording:
             return
-        right_frame = int(round(fraction * self.recording.last_frame))
+        right_frame = round(fraction * self.recording.last_frame)
+        print("fraction", fraction)
         self.recording.set_right_margin(right_frame)
 
     def shift_recording(self, num_slots):
@@ -169,7 +170,7 @@ class LoopEngine:
         self.composer.unregister_animal_role(animal_id, self.loops[animal_id].role)
 
     def slot_to_time(self, slot):
-        tick = self.grid.slot_to_tick(int(slot))
+        tick = self.grid.slot_to_tick(slot)
         return self.grid.tick_to_time(tick)
 
     def time_to_slot(self, time_sec):
@@ -333,8 +334,6 @@ class LoopEngine:
             
 
     def _generate_pitch_map_for_animal(self, animal_id, start_slots):
-        import random
-
         loop = self.loops[animal_id]
         base_midi = loop.midi
 

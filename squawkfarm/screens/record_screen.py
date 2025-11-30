@@ -1,3 +1,4 @@
+import math
 import os
 import uuid
 import numpy as np
@@ -9,6 +10,8 @@ from kivy.uix.image import Image
 from kivy.core.window import Window
 from kivy.graphics import Color, Line, Rectangle
 from kivy.clock import Clock
+
+from squawkfarm.services.loop_engine import LoopEngine
 
 
 class ImageButton(ButtonBehavior, Image):
@@ -70,7 +73,7 @@ class RecordScreen(Screen):
 
     def __init__(self, **kwargs):
         super(RecordScreen, self).__init__(**kwargs)
-        self.loop_engine = Screen.globals.loop_engine
+        self.loop_engine: LoopEngine = Screen.globals.loop_engine
 
         self.window_slots = self.loop_engine.beat_to_slot(1)
         self.record_slots = self.window_slots * 8
@@ -173,7 +176,6 @@ class RecordScreen(Screen):
         total_raw_samples = int(self.record_duration * Audio.sample_rate)
         self.decimate = max(1, total_raw_samples // self.max_display_points)
 
-        self.is_recording = False
         self.animal_id = ""
 
         self.count_in_generator = None
@@ -181,8 +183,8 @@ class RecordScreen(Screen):
 
         self.left_marker_line = None
         self.right_marker_line = None
-        self.left_marker_x = 0
-        self.right_marker_x = Window.width
+        self.left_marker_x = None
+        self.right_marker_x = None
         self.dragging_marker = None
 
     def _set_editing_buttons_visible(self, visible):
@@ -227,9 +229,13 @@ class RecordScreen(Screen):
     def on_enter(self, *_):
         self.animal_id = str(uuid.uuid4())
         self.writer = AudioWriter(get_animal_recording_dir(self.animal_id), num_channels=1)
+        self.max_possible_sample_size = None
 
+        self._clear_editing_buttons()
         self.canvas.before.clear()
         self.canvas.clear()
+        
+        self._recording_started = False
 
         # Add layered backgrounds: lawn.png then board.png on top
         with self.canvas.before:
@@ -270,10 +276,9 @@ class RecordScreen(Screen):
             )
 
         self._add_button_widgets()
-        self._update_sample_pixels()
 
     def on_update(self):
-        if self.is_recording:
+        if self.writer.active:
             self.mic.on_update()
             self._update_wave()
         
@@ -296,16 +301,12 @@ class RecordScreen(Screen):
         self.barn_rect.pos = self.barn_btn.pos
 
     def on_exit(self):
-        if hasattr(self, '_record_scheduled_event') and self._record_scheduled_event:
+        if self._record_scheduled_event:
             self._record_scheduled_event.cancel()
             self._record_scheduled_event = None
 
-        self.is_recording = False
-        self._recording_started = False
-        self._clear_marker_lines()
         self._set_editing_buttons_visible(False)
         self.record_btn.source = self.record_icon_path
-        self.record_btn.disabled = False
         self._remove_button_widgets()
         self.loop_engine.pause()
 
@@ -313,102 +314,123 @@ class RecordScreen(Screen):
         self.switch_to("garden")
 
     def _on_record_press(self, *_):
-        if not self.is_recording:
-            if not hasattr(self, '_recording_started') or not self._recording_started:
+        if not self.writer.active:
+            if not self._recording_started:
                 self._start_recording()
             else:
-                self._resume_recording()
+                self._clear_editing_buttons()
+                self._begin_actual_recording(reset=False)
         else:
             self._pause_recording()
 
     def _on_play_press(self, *_):
         self.loop_engine.toggle_play_recording_preview()
         
-    def _update_sample_pixels(self):
-        num_beats = self.sample_sizes[self.current_sample_size]
-        sample_slots = self.loop_engine.beat_to_slot(num_beats)
-        self.sample_pixels = self.grid.slots_to_pixels(sample_slots)
-        
-    def _on_sample_size_change(self, spinner, text):
-        self.current_sample_size = text
-        self._update_sample_pixels()
-
-        if self.loop_engine.recording is None:
-            return
-
+    def _adjust_markers_for_sample_size_change(self):
         self.right_marker_x = self.left_marker_x + self.sample_pixels
-        overflow = self.right_marker_x - Window.width
+        overflow = self.right_marker_x - self.max_x
         if overflow > 0:
             self.left_marker_x -= overflow
             self.right_marker_x -= overflow
-
+        
         self._update_marker_lines()
-        self._update_recording_margins()
+        
+    def _on_sample_size_change(self, _, text):
+        self.current_sample_size = text
+        
+        if not self.writer.active:
+            sample_size = self.sample_sizes[self.current_sample_size]
+            self.sample_pixels = self._get_sample_pixels(sample_size)
+            self._adjust_markers_for_sample_size_change()
+            self._update_recording_margins()
+            
+    def _clear_editing_buttons(self):
+        self._set_editing_buttons_visible(False)
+        self._clear_marker_lines()
+        self._set_editing_buttons_visible(False)
 
     def _start_recording(self):
         self.samples.clear()
         self._recording_started = False
         self._recorded_frames = 0
         self._record_scheduled_event = None
+        self.left_marker_x = None
+        self.right_marker_x = None
 
-        self._clear_marker_lines()
-        self._set_editing_buttons_visible(False)
-        self.record_btn.disabled = True
+        self._clear_editing_buttons()
         count_in_duration = self._play_count_in()
 
         Clock.schedule_once(lambda dt: self._begin_actual_recording(), count_in_duration)
 
-    def _begin_actual_recording(self):
+    def _begin_actual_recording(self, reset=True):
         self._recording_started = True
-        self.is_recording = True
-        self.record_btn.disabled = False
         self.record_btn.source = self.pause_icon_path
-        self.writer.start()
+        self.writer.start(reset)
 
         remaining_time = self.record_duration - (self._recorded_frames / Audio.sample_rate)
         self._record_scheduled_event = Clock.schedule_once(
             lambda dt: self._finish_recording(), remaining_time
         )
 
-    def _pause_recording(self):
-        self.is_recording = False
+    def _pause_recording(self, finished=False):
+        self.writer.stop("raw")
         self.record_btn.source = self.record_icon_path
 
         if self._record_scheduled_event:
             self._record_scheduled_event.cancel()
             self._record_scheduled_event = None
 
+        # Find the largest sample size that fits within max_x
+        best_size = None
+        if not finished:
+            for key, sample_size in self.sample_sizes.items():
+                if self._get_sample_pixels(sample_size) < (self.max_x - self.grid.x):
+                    self.max_possible_sample_size = key
+                    if self._get_sample_pixels(self.sample_sizes[self.current_sample_size]) >= self._get_sample_pixels(sample_size):
+                        best_size = key
+                    else:
+                        break
+                        
+        if best_size is not None:
+            self.current_sample_size = best_size
+        
+        large_enough = finished or best_size is not None
+        self._setup_editing_after_recording(large_enough)
+        
         self._recorded_frames = len(self.samples) * self.decimate
 
-    def _resume_recording(self):
-        self.is_recording = True
-        self.record_btn.source = self.pause_icon_path
-
-        remaining_frames = int(self.record_duration * Audio.sample_rate) - self._recorded_frames
-        remaining_time = remaining_frames / Audio.sample_rate
-
-        if remaining_time > 0:
-            self._record_scheduled_event = Clock.schedule_once(
-                lambda dt: self._finish_recording(), remaining_time
-            )
-        else:
-            self._finish_recording()
-
     def _finish_recording(self):
-        self.is_recording = False
         self._recording_started = False
-        self.record_btn.source = self.record_icon_path
+        self.max_possible_sample_size = "Large"
 
-        self.writer.stop("raw")
-
+        self._pause_recording(True)
+            
+    def _get_sample_pixels(self, num_beats):
+        sample_slots = self.loop_engine.beat_to_slot(num_beats)
+        return self.grid.slots_to_pixels(sample_slots)
+        
+    def _setup_editing_after_recording(self, large_enough):
         self.loop_engine.set_recording(self.animal_id)
-        self._draw_margin_markers()
-        self._update_recording_margins()
-        self._set_editing_buttons_visible(True)
+        
+        if large_enough:
+            sample_size = self.sample_sizes[self.current_sample_size]
+            self.sample_pixels = self._get_sample_pixels(sample_size)
+            
+            self._initialize_markers()
+            self.sample_size_spinner.text = self.current_sample_size
+            self._set_editing_buttons_visible(True)
+            
+            # Set spinner values to all keys up to and including max_possible_sample_size
+            all_keys = list(self.sample_sizes.keys())
+            max_idx = all_keys.index(self.max_possible_sample_size)
+            self.sample_size_spinner.values = all_keys[:max_idx+1]
+        else:
+            self.sample_pixels = self.max_x - self.grid.x
 
     def _update_recording_margins(self):
-        left_fraction = (self.left_marker_x - self.grid.x) / self.grid.width
-        right_fraction = (self.right_marker_x - self.grid.x) / self.grid.width
+        recorded_pixels = self.max_x - self.grid.x
+        left_fraction = (self.left_marker_x - self.grid.x) / recorded_pixels
+        right_fraction = (self.right_marker_x - self.grid.x) / recorded_pixels
         self.loop_engine.set_left_margin_of_recording(left_fraction)
         self.loop_engine.set_right_margin_of_recording(right_fraction)
 
@@ -456,13 +478,12 @@ class RecordScreen(Screen):
         except Exception as e:
             print(f"Error playing count-in: {e}")
             return 0.1
-    
 
-
-    def _draw_margin_markers(self):
-        grid_center_x = self.grid.x + self.grid.width / 2
-        self.left_marker_x = grid_center_x - self.sample_pixels / 2
-        self.right_marker_x = grid_center_x + self.sample_pixels / 2
+    def _initialize_markers(self):
+        if not self.left_marker_x:
+            center_x = self.grid.x + (self.max_x  - self.grid.x) / 2
+            self.left_marker_x = center_x - self.sample_pixels / 2
+            self.right_marker_x = center_x + self.sample_pixels / 2
 
         grid_bottom = self.grid.y
         grid_top = self.grid.y + self.grid.height
@@ -479,8 +500,6 @@ class RecordScreen(Screen):
             width=5,
         )
         self.canvas.after.add(self.right_marker_line)
-
-        self._update_wave()
 
     def _update_marker_lines(self):
         if not self.left_marker_line or not self.right_marker_line:
@@ -525,16 +544,15 @@ class RecordScreen(Screen):
         if self.dragging_marker and touch.grab_current == self:
             marker_distance = self.right_marker_x - self.left_marker_x
             grid_left = self.grid.x
-            grid_right = self.grid.x + self.grid.width
             if self.dragging_marker == "left":
-                max_left_x = grid_right - self.sample_pixels
+                max_left_x = self.max_x - self.sample_pixels
                 new_left_x = max(grid_left, min(touch.x, max_left_x))
 
                 self.left_marker_x = new_left_x
                 self.right_marker_x = new_left_x + marker_distance
 
             elif self.dragging_marker == "right":
-                new_right_x = max(grid_left + self.sample_pixels, min(touch.x, grid_right))
+                new_right_x = max(grid_left + self.sample_pixels, min(touch.x, self.max_x))
 
                 self.right_marker_x = new_right_x
                 self.left_marker_x = new_right_x - marker_distance
@@ -585,7 +603,7 @@ class RecordScreen(Screen):
         self.switch_to("garden")
 
     def _ingest_for_waveform(self, data, num_channels: int):
-        if not self.is_recording or len(self.samples) >= self.max_display_points:
+        if not self.writer.active or len(self.samples) >= self.max_display_points:
             return
 
         mono = data[0::num_channels] if num_channels > 1 else data
@@ -607,6 +625,8 @@ class RecordScreen(Screen):
         grid_w = self.grid.width
         cy = self.grid.y + self.grid.height / 2
         total_n = len(self.samples)
+        progress = max(0.0, min(1.0, total_n / float(self.max_display_points)))
+        self.max_x = self.grid.x + self.grid.width * progress
 
         if total_n < 2:
             self.wave_line.points = [grid_x, cy, grid_x + grid_w, cy]
@@ -614,9 +634,7 @@ class RecordScreen(Screen):
             self.wave_line_trim.points = []
             return
 
-        progress = max(0.0, min(1.0, total_n / float(self.max_display_points)))
-        max_x = grid_x + grid_w * progress
-        if max_x <= grid_x:
+        if self.max_x <= grid_x:
             self.wave_line.points = [grid_x, cy, grid_x + grid_w, cy]
             self.wave_shadow.points = [grid_x + 2, cy - 2, grid_x + grid_w + 2, cy - 2]
             self.wave_line_trim.points = []
@@ -633,7 +651,7 @@ class RecordScreen(Screen):
 
         ys = cy + arr * yscale
         ys = np.clip(ys, float(self.grid.y), float(self.grid.y + self.grid.height))
-        xs = np.linspace(grid_x, max_x, n, dtype=float)
+        xs = np.linspace(grid_x, self.max_x, n, dtype=float)
 
         pts = np.empty(n * 2, dtype=float)
         pts[0::2], pts[1::2] = xs, ys
