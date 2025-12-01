@@ -433,6 +433,7 @@ class RecordScreen(Screen):
         right_fraction = (self.right_marker_x - self.grid.x) / recorded_pixels
         self.loop_engine.set_left_margin_of_recording(left_fraction)
         self.loop_engine.set_right_margin_of_recording(right_fraction)
+        
 
     def _play_count_in(self):
         try:

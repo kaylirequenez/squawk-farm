@@ -3,16 +3,60 @@ from imslib.wavesrc import WaveBuffer, WaveFile
 
 from squawkfarm.utils import tune_to_midi
 
+class Recording(object):
+    def __init__(self, audio_path, start_frame=0, num_frames=None):
+        super(Recording, self).__init__()
+        self.audio_path = audio_path
+        wf = WaveFile(audio_path)
+        self.last_frame = wf.end
+
+        self.start_frame = start_frame
+        num_frames = num_frames if num_frames is not None else self.last_frame - start_frame
+
+        self.trimmed = WaveBuffer(audio_path, self.start_frame, num_frames)
+
+    def get_num_frames(self):
+        return self.trimmed.get_num_frames()
+
+    def get_generator(self, frame_offset=0, loop=False):
+        gen = WaveGenerator(self.trimmed, loop)
+
+        gen.frame = frame_offset
+        gen.set_gain(0.5)
+        return gen
+
+    def set_left_margin(self, start_frame):
+        shift = start_frame - self.start_frame
+        self.start_frame += shift
+        num_frames = self.get_num_frames() - shift
+
+        self.trimmed = WaveBuffer(self.audio_path, self.start_frame, num_frames)
+
+    def set_right_margin(self, end_frame):
+        num_frames = end_frame - self.start_frame
+        self.trimmed = WaveBuffer(self.audio_path, self.start_frame, num_frames)
+
+    def shift(self, num_frames):
+        tot = self.get_num_frames()
+        new_start = self.start_frame + num_frames
+        new_end = new_start + tot
+
+        if new_start < 0:
+            new_start = 0
+        elif new_end > self.last_frame:
+            new_start = self.last_frame - tot
+
+        self.trimmed = WaveBuffer(self.audio_path, new_start, tot)
+
 class RuntimeLoopInstance(object):
-    def __init__(self, data, midi, muted_ranges=None):
+    def __init__(self, data, muted_ranges=None):
         super(RuntimeLoopInstance, self).__init__()
         self.muted_ranges = muted_ranges if muted_ranges else []
-        self.set_buffer(data, midi)
+        self.set_buffer(data)
 
-    def set_buffer(self, data, midi):
+    def set_buffer(self, data):
         self.clean_data = data.copy()
         self.data = data.copy()
-        self.midi = midi
         self.num_frames = len(self.data)
         self.num_channels = 1
 
@@ -78,55 +122,8 @@ class RuntimeLoopInstance(object):
             last_index = last_index if last_index is not None else len(self.muted_ranges)
             self.muted_ranges = self.muted_ranges[:first_index] + self.muted_ranges[last_index:]
 
-
-class Recording(object):
-    def __init__(self, audio_path, start_frame=0, num_frames=None):
-        super(Recording, self).__init__()
-        self.audio_path = audio_path
-        wf = WaveFile(audio_path)
-        self.last_frame = wf.end
-
-        self.start_frame = start_frame
-        num_frames = num_frames if num_frames is not None else self.last_frame - start_frame
-
-        self.trimmed = WaveBuffer(audio_path, self.start_frame, num_frames)
-
-    def get_num_frames(self):
-        return self.trimmed.get_num_frames()
-
-    def get_generator(self, frame_offset=0, loop=False):
-        gen = WaveGenerator(self.trimmed, loop)
-
-        gen.frame = frame_offset
-        gen.set_gain(0.5)
-        return gen
-
-    def set_left_margin(self, start_frame):
-        shift = start_frame - self.start_frame
-        self.start_frame += shift
-        num_frames = self.get_num_frames() - shift
-
-        self.trimmed = WaveBuffer(self.audio_path, self.start_frame, num_frames)
-
-    def set_right_margin(self, end_frame):
-        num_frames = end_frame - self.start_frame
-        self.trimmed = WaveBuffer(self.audio_path, self.start_frame, num_frames)
-
-    def shift(self, num_frames):
-        tot = self.get_num_frames()
-        new_start = self.start_frame + num_frames
-        new_end = new_start + tot
-
-        if new_start < 0:
-            new_start = 0
-        elif new_end > self.last_frame:
-            new_start = self.last_frame - tot
-
-        self.trimmed = WaveBuffer(self.audio_path, new_start, tot)
-
-
 class Loop(object):
-    def __init__(self, audio_data, start_frame, num_frames, midi, role, volume=1, loop_instances=None):
+    def __init__(self, audio_data, start_frame, num_frames, midi, role, volume=1, loop_instances={}):
         super(Loop, self).__init__()
         self.current = audio_data
         self.start_frame = start_frame
@@ -136,16 +133,16 @@ class Loop(object):
         self.volume = volume
         self.role = role
 
-        self.instances = {}
+        self.instances: dict[int, int] = {} 
         loop_instances = loop_instances if loop_instances else []
-        for loop in loop_instances:
-            shifted_data = tune_to_midi(self.current, self.midi, loop.midi)
-            self.instances[loop.start_slot] = RuntimeLoopInstance(shifted_data, loop.midi, loop.muted_ranges)
+        for start_slot, midi in loop_instances:
+            self.instances[start_slot] = midi
             
-    def _has_overlap(self, candidate_start, candidate_num_slots, frame_to_slot, ignore_start=None):
-        candidate_end = candidate_start + candidate_num_slots
+    def _has_overlap(self, candidate_start, frame_to_slot, ignore_start=None):
+        num_slots = frame_to_slot(self.num_frames)
+        candidate_end = candidate_start + num_slots
 
-        for start_slot, num_slots, _ in self.get_instances_info(frame_to_slot):
+        for start_slot in self.instances.keys():
             if ignore_start is not None and start_slot == ignore_start:
                 continue
 
@@ -157,56 +154,37 @@ class Loop(object):
 
         return False
 
-    def get_num_frames(self, slot):
-        return self.instances[slot].num_frames
-
-    def get_instance_info(self, start_slot, frame_to_slot):
-        instance = self.instances[start_slot]
-        return (frame_to_slot(instance.num_frames), instance.midi)
-
-    def get_instances_info(self, frame_to_slot):
-        return [(start_slot, frame_to_slot(instance.num_frames), instance.midi) for start_slot, instance in self.instances.items()]
-
     def get_generator(self, start_slot, frame_offset=0, loop=False):
-        instance = self.instances[start_slot]
+        midi = self.instances[start_slot]
+        shifted_data = tune_to_midi(self.current, self.original_midi, midi)
+        
+        instance = RuntimeLoopInstance(shifted_data)
         gen = WaveGenerator(instance, loop)
 
         gen.frame = frame_offset
         gen.set_gain(self.volume)
-
         return gen
 
     def set_volume(self, volume):
         self.volume = max(0.0, min(1.0, volume))
 
     def set_pitch(self, start_slot, midi):
-        # Always tune from the ORIGINAL base_midi, not the current (shifted) base_midi
-        shifted_data = tune_to_midi(self.current, self.original_midi, midi)
-        self.instances[start_slot].set_buffer(shifted_data, midi)
-
+        self.instances[start_slot] = midi
 
     def add_to_grid(self, start_slot, frame_to_slot, overlap=False, midi=None):
-        if start_slot in self.instances or (not overlap and self._has_overlap(start_slot, frame_to_slot(self.num_frames), frame_to_slot)):
+        if start_slot in self.instances or (not overlap and self._has_overlap(start_slot, frame_to_slot)):
             return False
         
         midi = midi if midi is not None else self.midi
-        shifted_data = tune_to_midi(self.current, self.midi, midi)
-        self.instances[start_slot] = RuntimeLoopInstance(shifted_data, midi)
+        self.instances[start_slot] = midi
         return True
 
     def slide(self, old_start_slot, new_start_slot, frame_to_slot, overlap=False):
         if new_start_slot in self.instances:
             return old_start_slot
         
-        if not overlap:
-            num_slots, _ = self.get_instance_info(old_start_slot, frame_to_slot)
-            if self._has_overlap(new_start_slot, num_slots, frame_to_slot, ignore_start=old_start_slot):
+        if not overlap and self._has_overlap(new_start_slot, frame_to_slot, ignore_start=old_start_slot):
                 return old_start_slot
             
         self.instances[new_start_slot] = self.instances.pop(old_start_slot)
         return new_start_slot
-    
-    def toggle_mute(self, start_slot, frame_1, frame_2, mute):
-        if frame_1 > frame_2:
-            frame_1, frame_2 = frame_2, frame_1
-        self.instances[start_slot].toggle_mute(frame_1, frame_2, mute)

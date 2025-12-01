@@ -1,12 +1,13 @@
 import librosa
+from numpy import copy
 from imslib.audio import Audio
-import random
-
 from squawkfarm.models.progression import ChordProgression
 from squawkfarm.models.loop_runtime import Loop, Recording
 from squawkfarm.services.audio.grid import Grid
 from squawkfarm.services.audio.audio_manager import AudioManager
 from squawkfarm.services.composition.composer import Composer
+from squawkfarm.services.composition.pitch import generate_constrained_pentatonic_pitch_map
+from squawkfarm.services.composition.rhythm import generate_slots
 from squawkfarm.utils import tune_sample_and_save, get_recording_wav_path
 
 class LoopEngine:
@@ -39,6 +40,9 @@ class LoopEngine:
                 loop.volume,
                 loop.instances,
             )
+                    
+        self.rhythm_candidates: list[list[int]] = []
+        self.rhythm_candidate_index: int = 0
 
     def get_bpm(self):
         return self.grid.get_bpm()
@@ -132,14 +136,12 @@ class LoopEngine:
         if not self.recording:
             return
         left_frame = round(fraction * self.recording.last_frame)
-        print("fraction", fraction)
         self.recording.set_left_margin(left_frame)
 
     def set_right_margin_of_recording(self, fraction):
         if not self.recording:
             return
         right_frame = round(fraction * self.recording.last_frame)
-        print("fraction", fraction)
         self.recording.set_right_margin(right_frame)
 
     def shift_recording(self, num_slots):
@@ -166,8 +168,8 @@ class LoopEngine:
         self.composer.register_animal_role(animal_id, role)
         
     def delete_animal_loop(self, animal_id):
-        self.loops.pop(animal_id)
-        self.composer.unregister_animal_role(animal_id, self.loops[animal_id].role)
+        loop = self.loops.pop(animal_id)
+        self.composer.unregister_animal_role(animal_id, loop.role)
 
     def slot_to_time(self, slot):
         tick = self.grid.slot_to_tick(slot)
@@ -197,11 +199,9 @@ class LoopEngine:
     def get_base_midi(self, animal_id):
         return self.loops[animal_id].midi
 
-    def get_instance_info(self, animal_id, start_slot):
-        return self.loops[animal_id].get_instance_info(start_slot, self.grid.frame_to_slot)
-
     def get_instances_info(self, animal_id):
-        return self.loops[animal_id].get_instances_info(self.grid.frame_to_slot)
+        loop = self.loops[animal_id]
+        return loop.instances, self.grid.frame_to_slot(loop.num_frames)
 
     def add_loop_instance(self, animal_id, start_slot, overlap=False, midi=None):
         loop = self.loops[animal_id]
@@ -212,60 +212,31 @@ class LoopEngine:
         self.loops[animal_id].instances.pop(start_slot, None)
 
     def clear_loop_instances(self, animal_id):
-        for start_slot in self.loops[animal_id].instances:
-            self.remove_loop_instance(animal_id, start_slot)
+        self.loops[animal_id].instances.clear()
 
     def set_pitch_of_instance(self, animal_id, start_slot, midi):
         loop = self.loops[animal_id]
         loop.set_pitch(start_slot, midi)
 
-    def shift_animal_octave(self, animal_id, semitones):
+    def shift_animal_octave(self, animal_id, direction: int):
+        """
+        Shift an animal's notes up or down by whole octaves.
+
+        direction:
+            +1 -> up one octave ( +12 semitones )
+            -1 -> down one octave ( -12 semitones )
+        """
         loop = self.loops.get(animal_id)
-        if not loop:
-            return
 
-        # Check if the shift is possible without clamping any instances
-        min_instance_midi = min((instance.midi for instance in loop.instances.values()), default=loop.midi)
-        max_instance_midi = max((instance.midi for instance in loop.instances.values()), default=loop.midi)
-        
-        # Also include base MIDI in the range check
-        min_midi = min(min_instance_midi, loop.midi)
-        max_midi = max(max_instance_midi, loop.midi)
-        
-        # Calculate what the new min/max would be
-        new_min = min_midi + semitones
-        new_max = max_midi + semitones
-        
-        print(f"[shift_animal_octave] {animal_id}: current range [{min_midi}, {max_midi}], base={loop.midi}, semitones={semitones}, would result in [{new_min}, {new_max}]")
-        
-        # If the shift would push any MIDI value out of bounds, don't do it
-        if new_min < 0 or new_max > 127:
-            print(f"[shift_animal_octave] BLOCKED: Cannot shift {animal_id} by {semitones}: would result in MIDI range [{new_min}, {new_max}]")
-            return
+        semitones = 12 * direction
 
-        print(f"[shift_animal_octave] ALLOWED: Shifting {animal_id} by {semitones}")
-        
-        # IMPORTANT: Keep the old base_midi before updating
-        old_base_midi = loop.midi
-        
-        # Update all instances FIRST using the old base_midi
-        for start_slot in list(loop.instances.keys()):
-            instance = loop.instances[start_slot]
-            old_midi = instance.midi
-            new_midi = instance.midi + semitones
-            # set_pitch uses loop.midi internally, so it must be the OLD base_midi
-            loop.set_pitch(start_slot, new_midi)
-            print(f"[shift_animal_octave] slot {start_slot}: {old_midi} → {new_midi}")
-        
-        # THEN update base MIDI after all instances are updated
-        loop.midi = old_base_midi + semitones
-        print(f"[shift_animal_octave] base_midi updated: {old_base_midi} → {loop.midi}")
-
-    def mute_instance_slots(self, animal_id, start_slot, slot_1, slot_2, mute):
-        loop = self.loops[animal_id]
-        frame_1 = self.grid.slot_to_frame(slot_1)
-        frame_2 = self.grid.slot_to_frame(slot_2)
-        loop.toggle_mute(start_slot, frame_1, frame_2, mute)
+        loop.midi += semitones
+        for slot in loop.instances:
+            loop.instances[slot] += semitones
+            
+        loop.role = self.composer.guess_initial_role(loop.midi, self.slot_to_beat(len(loop.instances))) 
+        self.rhythm_candidates = self._compute_rhythm_candidates_for_animal(animal_id)
+        self.rhythm_candidate_index = 0
 
     def slide_instance(self, animal_id, old_start_slot, new_start_slot, overlap=False):
         self.pause()
@@ -316,129 +287,126 @@ class LoopEngine:
         gen = loop.get_generator(start_slot, frame_offset=0, loop=False)
         self.audio_manager.mixer.add(gen)
 
+
     def auto_generate_for_animal(self, animal_id):
+        """
+        Called when an animal is first added or user makes edits.
+        Picks the best rhythm candidate and applies it (with fresh pitches).
+        """
+        self.rhythm_candidates = self._compute_rhythm_candidates_for_animal(animal_id)
+        self.rhythm_candidate_index = 0
+        
+        self._apply_rhythm_candidate(animal_id)
+        
+    def toggle_rhythm_option(self, animal_id, direction: int = 1):
+        """
+        Cycle through precomputed rhythm candidates for this animal.
+
+        direction:
+          +1 -> next candidate
+          -1 -> previous candidate
+        """
+        candidates = self.rhythm_candidates
+
+        self.rhythm_candidate_index = (self.rhythm_candidate_index + direction) % len(candidates)
+        
+        self._apply_rhythm_candidate(animal_id)
+    
+    def _apply_rhythm_candidate(self, animal_id):
+        """
+        Clear this animal's instances and rebuild them
+        """
+        start_slots = self.rhythm_candidates[self.rhythm_candidate_index]["pattern"]
         loop = self.loops[animal_id]
 
-        beat_starts = self._generate_rhythm_beats_for_animal(animal_id)
-        start_slots = [int(round(self.beat_to_slot(b))) for b in beat_starts]
-        pitch_by_slot = self._generate_pitch_map_for_animal(
+        # Clear existing rhythm for this animal
+        loop.instances.clear()
+
+        # Generate pitches for these slots
+        pitch_map = self._generate_pitch_map_for_animal(
             animal_id=animal_id,
             start_slots=start_slots,
         )
 
-        loop = self.loops[animal_id]
+        # Lay them down in the grid
         for s in start_slots:
-            midi = pitch_by_slot.get(s)
-            if midi is not None:
-                loop.add_to_grid(s, self.grid.frame_to_slot, overlap=False, midi=midi)
-            
+            midi = pitch_map.get(s, loop.midi)
+            loop.add_to_grid(
+                start_slot=int(s),
+                frame_to_slot=self.grid.frame_to_slot,
+                midi=midi,
+            )
 
     def _generate_pitch_map_for_animal(self, animal_id, start_slots):
         loop = self.loops[animal_id]
-        base_midi = loop.midi
 
-        pentatonic_intervals = [0, 2, 4, 7, 9]
-        root_c = self.settings.root
+        pitch_map, ui_base_midi = generate_constrained_pentatonic_pitch_map(
+            base_midi=loop.midi,
+            root_midi=self.composer.root,
+            start_slots=start_slots,
+        )
 
-        pentatonic_notes = []
-        for octave_offset in range(-1, 3):
-            for interval in pentatonic_intervals:
-                note = root_c + (octave_offset * 12) + interval
-                if 0 <= note <= 127:
-                    pentatonic_notes.append(note)
-
-        closest_note = min(pentatonic_notes, key=lambda n: abs(n - base_midi))
-        closest_index = pentatonic_notes.index(closest_note)
-
-        pitch_map = {}
-        current_note_index = closest_index
-        is_first_animal = len(self.loops) == 1
-        
-        # Track the range of notes we generate
-        min_note_index = closest_index
-        max_note_index = closest_index
-        generated_notes = []
-
-        for s in start_slots:
-            if is_first_animal and s == 0:
-                pitch_map[s] = pentatonic_notes[current_note_index]
-                generated_notes.append(pentatonic_notes[current_note_index])
-                min_note_index = min(min_note_index, current_note_index)
-                max_note_index = max(max_note_index, current_note_index)
-                step = random.choice([-1, 0, 1, 1])
-                current_note_index = max(0, min(len(pentatonic_notes) - 1, current_note_index + step))
-            elif random.random() < 0.7:
-                pitch_map[s] = pentatonic_notes[current_note_index]
-                generated_notes.append(pentatonic_notes[current_note_index])
-                min_note_index = min(min_note_index, current_note_index)
-                max_note_index = max(max_note_index, current_note_index)
-                step = random.choice([-1, 0, 1, 1])
-                current_note_index = max(0, min(len(pentatonic_notes) - 1, current_note_index + step))
-            else:
-                pitch_map[s] = None
-
-        # Adjust base_midi to center the generated notes on the visible range
-        # The display shows 8 rows (0-7), where row 0 is the lowest and row 7 is the highest
-        # We want the minimum generated note to appear around row 0-1 and max around row 6-7
-        min_generated_note = min(generated_notes) if generated_notes else base_midi
-        max_generated_note = max(generated_notes) if generated_notes else base_midi
-        note_range = max_generated_note - min_generated_note
-        
-        print(f"[_generate_pitch_map_for_animal] Generated notes: min={min_generated_note}, max={max_generated_note}, range={note_range}")
-        print(f"[_generate_pitch_map_for_animal] Original base_midi={base_midi}, pitch_map={pitch_map}")
-        
-        # Set base_midi to the minimum generated note (or slightly below it)
-        # This ensures the lowest note appears near the bottom of the display
-        new_base_midi = min_generated_note
-        if new_base_midi != base_midi:
-            print(f"[_generate_pitch_map_for_animal] Adjusting base_midi from {base_midi} to {new_base_midi}")
-            loop.midi = new_base_midi
-            loop.original_midi = new_base_midi
-
+        loop.midi = ui_base_midi
         return pitch_map
-
-
-    def _get_existing_bass_templates(self, exclude_animal_id):
-        templates = []
-
-        for aid in self.composer.animals_by_role.get("bass"):
+    
+    def _get_same_role_globals(self, role: str, exclude_animal_id=None) -> list[list[int]]:
+        """
+        Get global slot patterns for animals of the same role, excluding one.
+        """
+        patterns: list[list[int]] = []
+        for aid in self.composer.animals_by_role[role]:
             if aid == exclude_animal_id:
                 continue
+            slots = sorted(self.loops[aid].instances.keys())
+            patterns.append(slots)
+        return patterns
 
-            tpl = [self.slot_to_beat(start_slot) % self.grid.get_beats_per_measure()
-                   for start_slot in self.loops[aid].instances]
-            tpl.sort()
-            templates.append(tpl)
+    def _get_all_role_globals(self, exclude_animal_id=None) -> list[list[int]]:
+        """
+        Get global slot patterns for all animals (all roles), excluding one.
+        """
+        patterns: list[list[int]] = []
+        for aid, loop in self.loops.items():
+            if aid == exclude_animal_id:
+                continue
+            slots = sorted(loop.instances.keys())
+            patterns.append(slots)
+        return patterns
 
-        return templates
+    def _compute_rhythm_candidates_for_animal(self, animal_id) -> list[list[int]]:
+        """
+        Compute rhythm candidates for this animal and cache them.
 
-    def _generate_rhythm_beats_for_animal(self, animal_id):
+        Returns the list of candidate global slot patterns.
+        """
         loop = self.loops[animal_id]
         role = loop.role
 
-        beats_per_measure = self.grid.get_beats_per_measure()
+        slots_per_measure = self.get_slots_per_measure()
         total_measures = self.grid.get_total_measures()
-        total_beats = beats_per_measure * total_measures
 
         loop_slots = self.grid.frame_to_slot(loop.num_frames)
-        loop_beats = self.slot_to_beat(loop_slots)
 
-        if loop_beats < 1.5:
-            interval = 1
-        elif loop_beats < 3:
-            interval = 2
-        else:
-            interval = 4
+        same_role_globals = self._get_same_role_globals(role, exclude_animal_id=animal_id)
+        all_role_globals = self._get_all_role_globals(exclude_animal_id=animal_id)
 
-        beat_starts = []
-        current_beat = 0
+        candidates = generate_slots(
+            role=role,
+            loop_slots=loop_slots,
+            slots_per_measure=slots_per_measure,
+            total_measures=total_measures,
+            same_role_globals=same_role_globals,
+            all_role_globals=all_role_globals,
+            min_score=None,  # you can tweak this later
+        )
+        
+        for c in candidates:
+            print(f"RHYTHM CANDIDATE: score={c['score']}, pattern={c['pattern']}")
 
-        while current_beat < total_beats:
-            if current_beat + loop_beats <= total_beats:
-                beat_starts.append(float(current_beat))
-            current_beat += interval
+        self.rhythm_candidates = candidates
+        self.rhythm_candidate_index = 0
 
-        return beat_starts
+        return candidates
 
     def _retune_all_instances(self):
         pass

@@ -38,7 +38,7 @@ class AnimalLoop:
     num_frames: int # number of frames in the trimmed recording
     midi: int
     volume: float # 1.0 = max volume
-    role: str # "bass", "harmony", "melody", or "percussion"
+    role: str # "bass", "harmony", "melody"
 
     # list of instances for this animal on the grid
-    instances: list = field(default_factory=list)
+    instances: dict[int, int] = field(default_factory=dict) # start_slot -> midi

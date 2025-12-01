@@ -1,5 +1,3 @@
-from squawkfarm.models.progression import ChordProgression
-
 MIN_ROOT = 48   # C3
 MAX_ROOT = 72   # C5
 
@@ -14,7 +12,6 @@ class Composer:
             "bass": set(),
             "melody": set(),
             "harmony": set(),
-            "percussion": set(),
         }
 
     def _choose_initial_root(self, base_midi):
@@ -65,6 +62,20 @@ class Composer:
         bass_count   = len(self.animals_by_role.get("bass"))
         melody_count = len(self.animals_by_role.get("melody"))
         offset = animal_midi - self.root
+        
+        # Long, sustained phrase + mid/high pitch → more harmony-ish
+        if beats >= 3.0:
+            if base_role == "melody":
+                base_role = "harmony"
+            elif base_role == "bass" and offset > -10:
+                # not super deep + long → treat as harmonic bed
+                base_role = "harmony"
+
+        # Very short phrase + fairly high → more melodic
+        if beats <= 1.0:
+            if base_role == "harmony" and offset >= 4:
+                # short and relatively high → feels like a melodic lick
+                base_role = "melody"
 
         # Keep at least one bass/melody if pitch suggests it
         if bass_count == 0 and base_role == "bass":

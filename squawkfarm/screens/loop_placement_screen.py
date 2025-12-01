@@ -8,6 +8,8 @@ from kivy.uix.label import Label
 from kivy.core.window import Window
 from kivy.graphics import Rectangle, Color
 
+from squawkfarm.services.loop_engine import LoopEngine
+
 
 class ImageButton(ButtonBehavior, Image):
     pass
@@ -63,7 +65,7 @@ def get_octave_c_for_animal(base_midi):
 class LoopPlacementScreen(Screen):
     def __init__(self, **kwargs):
         super(LoopPlacementScreen, self).__init__(**kwargs)
-        self.loop_engine = Screen.globals.loop_engine
+        self.loop_engine: LoopEngine = Screen.globals.loop_engine
 
         self.grid_x_margin = Window.width * 0.1
         self.grid_y_margin = Window.height * 0.15
@@ -107,7 +109,7 @@ class LoopPlacementScreen(Screen):
         self.down_icon_path = get_ui_asset_path("down.png")
 
         self.octave_label = Label(
-            text="change octave",
+            text="",
             size_hint=(None, None),
             size=(120, 50),
             pos=(Window.width - 340, Window.height - 60),
@@ -171,6 +173,21 @@ class LoopPlacementScreen(Screen):
         self._octave_shift_direction = 0  # 1 for up, -1 for down
         self._octave_shift_event = None
 
+        # Toggle Sequence button
+        self.toggle_sequence_btn = ShadowButton(
+            text="[b]Toggle Sequence[/b]",
+            markup=True,
+            size_hint=(None, None),
+            size=(220, 80),
+            pos=(Window.width / 2 - 110, 20),
+            background_normal='',
+            background_down='',
+            background_color=(0.8, 0.9, 1, 1),
+            color=(0.05, 0.05, 0.3, 1),
+            font_size=20,
+        )
+        self.toggle_sequence_btn.bind(on_press=self._on_toggle_sequence_press)
+
     def _add_button_widgets(self):
         self.add_widget(self.sample_button)
         self.add_widget(self.octave_label)
@@ -179,6 +196,7 @@ class LoopPlacementScreen(Screen):
         self.add_widget(self.add_button)
         self.add_widget(self.delete_button)
         self.add_widget(self.barn_btn)
+        self.add_widget(self.toggle_sequence_btn)
 
     def _remove_button_widgets(self):
         self.remove_widget(self.sample_button)
@@ -188,6 +206,11 @@ class LoopPlacementScreen(Screen):
         self.remove_widget(self.add_button)
         self.remove_widget(self.delete_button)
         self.remove_widget(self.barn_btn)
+        self.remove_widget(self.toggle_sequence_btn)
+
+    def _on_toggle_sequence_press(self, *_):
+        self.loop_engine.toggle_rhythm_option(self.animal_id)
+        self._rebuild_piano_from_engine()
 
     def on_enter(self, animal_id):
         self.animal_id = animal_id
@@ -341,13 +364,10 @@ class LoopPlacementScreen(Screen):
 
     def _do_octave_shift(self):
         """Perform a single octave shift"""
-        semitones = self._octave_shift_direction * 12
-        print(f"[_do_octave_shift] Starting octave shift: direction={self._octave_shift_direction}, semitones={semitones}")
-        self.loop_engine.shift_animal_octave(self.animal_id, semitones)
+        self.loop_engine.shift_animal_octave(self.animal_id, self._octave_shift_direction)
         self._rebuild_piano_from_engine()
         self.loop_engine.pause()
         self.loop_engine.play(animal_id=self.animal_id)
-        print(f"[_do_octave_shift] Completed")
 
     def _on_add_press(self, *_):
         if self._adding_note:
@@ -408,35 +428,82 @@ class LoopPlacementScreen(Screen):
         self._hammer_active = True
         self._dragging_hammer = True
 
-    def row_to_midi(self, row, base_midi, key_mode):
-        octave_c = get_octave_c_for_animal(base_midi)
-        offsets = MAJOR_OFFSETS if key_mode == "major" else MINOR_OFFSETS
-        row = max(0, min(7, row))
-        return octave_c + offsets[row]
+    def row_to_midi(self, row: int, base_midi: int, key_mode: str) -> int:
+        """
+        Map a UI row (0..7) to a MIDI note, treating base_midi as the
+        bottom row even if it's *not* in the pentatonic scale.
 
-    def midi_to_row(self, midi, base_midi, key_mode):
-        offsets = MAJOR_OFFSETS if key_mode == "major" else MINOR_OFFSETS
-        # Calculate semitone offset from the base_midi, not from octave_c
-        # This way notes display relative to the base note
+        - row 0 is exactly base_midi
+        - higher rows walk upward in pentatonic steps from base_midi
+        """
+
+        # Pentatonic intervals within one octave
+        if key_mode == "major":
+            intervals = [0, 2, 4, 7, 9]
+        else:
+            # treat everything else as minor pentatonic for now
+            intervals = [0, 3, 5, 7, 10]
+
+        # Clamp row to 0..7 (8 rows)
+        row = max(0, min(7, row))
+
+        # How many pentatonic steps above the base do we go?
+        step_index = row  # 0 for bottom, 1 for next, etc.
+
+        # Which degree in the pentatonic pattern?
+        degree = step_index % len(intervals)
+        # How many octaves above base?
+        octave_offset = step_index // len(intervals)
+
+        # Total semitone offset from base_midi
+        offset = intervals[degree] + 12 * octave_offset
+
+        note = base_midi + offset
+
+        # Clamp to valid MIDI range
+        note = max(0, min(127, note))
+
+        return note
+
+    def midi_to_row(self, midi: int, base_midi: int, key_mode: str) -> int:
+        """
+        Map a MIDI note back to the closest UI row (0..7),
+        assuming rows are laid out pentatonically above base_midi
+        like in row_to_midi.
+        """
+        # Pentatonic intervals within one octave
+        if key_mode == "major":
+            intervals = [0, 2, 4, 7, 9]
+        else:
+            intervals = [0, 3, 5, 7, 10]
+
+        # Precompute the 8 offsets used by the rows (must match row_to_midi)
+        offsets = []
+        for row in range(8):  # rows 0..7
+            degree = row % len(intervals)
+            octave_offset = row // len(intervals)
+            offset = intervals[degree] + 12 * octave_offset
+            offsets.append(offset)
+
+        # Semitone distance from base_midi
         semitone_offset = midi - base_midi
-        # Find the best matching row in the scale
+
+        # Find the row whose offset is closest to this MIDI
         row = min(range(8), key=lambda i: abs(offsets[i] - semitone_offset))
+
         return row
 
     def _rebuild_piano_from_engine(self):
         self.piano.clear_notes()
 
         height = self.grid.slot_height()
-        instances = self.loop_engine.get_instances_info(self.animal_id)
+        instances, num_slots = self.loop_engine.get_instances_info(self.animal_id)
 
         base_midi = self.loop_engine.get_base_midi(self.animal_id)
         key_mode = self.loop_engine.get_key_mode()
         slots_per_beat = self.loop_engine.get_slots_per_beat()
-        
-        midi_values = [midi for _, _, midi in instances]
-        print(f"[_rebuild_piano_from_engine] base_midi={base_midi}, key_mode={key_mode}, all instance MIDIs={midi_values}")
 
-        for start_slot, num_slots, midi in instances:
+        for start_slot, midi in instances.items():
             x = self.grid.slot_index_to_x(start_slot)
             quantized_slots = quantize_to_beat_slots(num_slots, slots_per_beat)
             width = self.grid.slots_to_pixels(quantized_slots)
@@ -577,7 +644,3 @@ class LoopPlacementScreen(Screen):
         self._rebuild_piano_from_engine()
         self.loop_engine.play_note_preview(self.animal_id, final_column)
         return True
-
-
-
-

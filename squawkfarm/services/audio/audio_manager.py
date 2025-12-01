@@ -102,8 +102,8 @@ class AudioManager:
         loops_to_play = {filter_animal_id: self.loops[filter_animal_id]} if filter_animal_id and filter_animal_id in self.loops else self.loops
 
         for animal_id, loop in loops_to_play.items():
-            for start_slot, num_slots, _ in loop.get_instances_info(self.grid.frame_to_slot):
-                wave_generator = None
+            for start_slot, _ in loop.instances.items():
+                num_slots = self.grid.frame_to_slot(loop.num_frames)
                 tick = self.grid.slot_to_tick(start_slot)
                 frame_offset = 0
 
@@ -147,9 +147,9 @@ class AudioManager:
         if not loop or start_slot not in loop.instances:
             return
 
-        instance = loop.instances[start_slot]
+        midi = loop.instances[start_slot]
 
-        current_midi = instance.midi
+        current_midi = midi
         target_midi = current_midi + transpose_semitones
 
         scale_degree_in_c = current_midi % 12
@@ -166,8 +166,8 @@ class AudioManager:
         target_midi += quality_adjustment
 
         if transpose_semitones != 0 or quality_adjustment != 0:
-            transposed_data = tune_to_midi(instance.clean_data, current_midi, target_midi)
-            temp_instance = RuntimeLoopInstance(transposed_data, target_midi, instance.muted_ranges)
+            transposed_data = tune_to_midi(loop.current, current_midi, target_midi)
+            temp_instance = RuntimeLoopInstance(transposed_data)
             gen = WaveGenerator(temp_instance, False)
         else:
             gen = loop.get_generator(start_slot, frame_offset, False)
@@ -178,7 +178,7 @@ class AudioManager:
         self.mixer.add(gen)
 
         self._on_sing(animal_id)
-        duration = self.grid.frame_to_time(loop.get_num_frames(start_slot))
+        duration = self.grid.frame_to_time(loop.num_frames)
 
         close_duration = duration * 0.9
 
