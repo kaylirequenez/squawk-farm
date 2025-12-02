@@ -166,7 +166,7 @@ class AudioManager:
         target_midi += quality_adjustment
 
         if transpose_semitones != 0 or quality_adjustment != 0:
-            transposed_data = tune_to_midi(loop.current, current_midi, target_midi)
+            transposed_data = tune_to_midi(loop.current, loop.original_midi, target_midi)
             temp_instance = RuntimeLoopInstance(transposed_data)
             gen = WaveGenerator(temp_instance, False)
         else:

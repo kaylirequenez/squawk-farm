@@ -437,68 +437,35 @@ class LoopPlacementScreen(Screen):
         self._dragging_hammer = True
 
     def row_to_midi(self, row: int, base_midi: int, key_mode: str) -> int:
-        """
-        Map a UI row (0..7) to a MIDI note, treating base_midi as the
-        bottom row even if it's *not* in the pentatonic scale.
-
-        - row 0 is exactly base_midi
-        - higher rows walk upward in pentatonic steps from base_midi
-        """
-
-        # Pentatonic intervals within one octave
         if key_mode == "major":
-            intervals = [0, 2, 4, 7, 9]
+            intervals = [0, 2, 4, 5, 7, 9, 11]
         else:
-            # treat everything else as minor pentatonic for now
-            intervals = [0, 3, 5, 7, 10]
+            intervals = [0, 2, 3, 5, 7, 8, 10]
 
-        # Clamp row to 0..7 (8 rows)
         row = max(0, min(7, row))
-
-        # How many pentatonic steps above the base do we go?
-        step_index = row  # 0 for bottom, 1 for next, etc.
-
-        # Which degree in the pentatonic pattern?
+        step_index = row
         degree = step_index % len(intervals)
-        # How many octaves above base?
         octave_offset = step_index // len(intervals)
-
-        # Total semitone offset from base_midi
         offset = intervals[degree] + 12 * octave_offset
-
         note = base_midi + offset
-
-        # Clamp to valid MIDI range
         note = max(0, min(127, note))
-
         return note
 
     def midi_to_row(self, midi: int, base_midi: int, key_mode: str) -> int:
-        """
-        Map a MIDI note back to the closest UI row (0..7),
-        assuming rows are laid out pentatonically above base_midi
-        like in row_to_midi.
-        """
-        # Pentatonic intervals within one octave
         if key_mode == "major":
-            intervals = [0, 2, 4, 7, 9]
+            intervals = [0, 2, 4, 5, 7, 9, 11]
         else:
-            intervals = [0, 3, 5, 7, 10]
+            intervals = [0, 2, 3, 5, 7, 8, 10]
 
-        # Precompute the 8 offsets used by the rows (must match row_to_midi)
         offsets = []
-        for row in range(8):  # rows 0..7
+        for row in range(8):
             degree = row % len(intervals)
             octave_offset = row // len(intervals)
             offset = intervals[degree] + 12 * octave_offset
             offsets.append(offset)
 
-        # Semitone distance from base_midi
         semitone_offset = midi - base_midi
-
-        # Find the row whose offset is closest to this MIDI
         row = min(range(8), key=lambda i: abs(offsets[i] - semitone_offset))
-
         return row
 
     def _rebuild_piano_from_engine(self):
