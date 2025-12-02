@@ -42,7 +42,7 @@ class AnimalWidget(Image):
         self.click_button_scale = 1.5
         self.click_button = Button(
             size_hint=(None, None),
-            background_color=(0.2, 0.8, 0.2, 0.3),
+            background_color=(0, 0, 0, 0),
             background_normal='',
         )
         self.click_button.bind(on_press=self._on_click_button_press)

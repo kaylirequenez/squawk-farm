@@ -286,10 +286,12 @@ class RecordScreen(Screen):
                 points=[self.grid.x, grid_cy, self.grid.x + self.grid.width, grid_cy],
                 width=2.0,
             )
-            Color(0.45, 0.6, 0.35, 1)
+
+        with self.canvas.after:
+            Color(0.2, 0.8, 0.2, 1)
             self.wave_line_trim = Line(
                 points=[self.grid.x, grid_cy, self.grid.x, grid_cy],
-                width=2.0,
+                width=3.5,
             )
 
         self._add_button_widgets()
@@ -524,21 +526,21 @@ class RecordScreen(Screen):
 
         grid_bottom = self.grid.y
         grid_top = self.grid.y + self.grid.height
-        
+
         left_points = [
             self.left_marker_x,
             grid_bottom,
             self.left_marker_x,
             grid_top,
         ]
-        
+
         right_points = [
             self.right_marker_x,
             grid_bottom,
             self.right_marker_x,
             grid_top,
         ]
-    
+
         if not self.left_marker_line:
             self.canvas.after.add(Color(0.05, 0.05, 0.3, 1))
             self.left_marker_line = Line(points=left_points, width=5)
@@ -548,6 +550,8 @@ class RecordScreen(Screen):
         else:
             self.left_marker_line.points = left_points
             self.right_marker_line.points = right_points
+
+        self._update_wave()
 
     def on_touch_down(self, touch):
         if not self.left_marker_line or not self.right_marker_line:
