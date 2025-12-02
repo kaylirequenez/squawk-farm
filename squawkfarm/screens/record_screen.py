@@ -101,6 +101,7 @@ class RecordScreen(Screen):
             background_color=(1, 1, 1, 0),
         )
         with self.barn_btn.canvas.before:
+            Color(1, 1, 1, 1)
             self.barn_rect = Rectangle(
                 pos=self.barn_btn.pos,
                 size=self.barn_btn.size,
@@ -108,7 +109,6 @@ class RecordScreen(Screen):
             )
         self.barn_btn.bind(on_press=self._on_barn_press)
 
-        # Record/Pause button (image-based)
         self.btn_size = 100
         self.record_icon_path = get_ui_asset_path("record.png")
         self.pause_icon_path = get_ui_asset_path("pause.png")
@@ -122,6 +122,8 @@ class RecordScreen(Screen):
         self.record_btn.bind(on_release=self._on_record_press)
 
         self.play_icon_path = get_ui_asset_path("play.png")
+        
+        
         self.play_btn = ImageButton(
             source=self.play_icon_path,
             size_hint=(None, None),
@@ -133,6 +135,9 @@ class RecordScreen(Screen):
         self.play_btn.bind(on_release=self._on_play_press)
 
         self.hatch_icon_path = get_ui_asset_path("hatch.png")
+        
+        
+        
         self.hatch_btn_size = 300
         self.add_loop_btn = ImageButton(
             source=self.hatch_icon_path,
@@ -268,9 +273,8 @@ class RecordScreen(Screen):
             lawn_path = get_ui_asset_path("lawn.png")
             lawn_tex = Image(source=lawn_path).texture if os.path.exists(lawn_path) else None
             if lawn_tex:
-                Rectangle(pos=(0, 0), size=Window.size, texture=lawn_tex)
+                self.bg_rect = Rectangle(pos=(0, 0), size=Window.size, texture=lawn_tex)
 
-          
         self.grid = LoopGrid(
             total_slots=self.record_slots,
             slots_per_beat=self.loop_engine.get_slots_per_beat(),
@@ -279,7 +283,7 @@ class RecordScreen(Screen):
             y_margin=self.grid_y_margin,
             skip_outer_lines=True,
         )
-        self.canvas.before.add(self.grid)
+        self.canvas.add(self.grid)
 
         grid_cy = self.grid.y + self.grid.height / 2
 
@@ -302,7 +306,51 @@ class RecordScreen(Screen):
                 width=3.5,
             )
 
-        self._add_button_widgets()
+        self.add_widget(self.barn_btn)
+        self.add_widget(self.record_btn)
+        self.add_widget(self.play_btn)
+        self.add_widget(self.add_loop_btn)
+        self.add_widget(self.sample_size_spinner)
+        self.add_widget(self.default_sounds_spinner)
+
+    def on_resize(self, *args):
+        if hasattr(self, 'bg_rect'):
+            self.bg_rect.pos = (0, 0)
+            self.bg_rect.size = Window.size
+
+        self.barn_btn_size = Window.width / 8
+        self.barn_btn.size = (self.barn_btn_size, self.barn_btn_size)
+        self.barn_btn.pos = (Window.width - self.barn_btn_size, 0)
+        self.barn_rect.size = self.barn_btn.size
+        self.barn_rect.pos = self.barn_btn.pos
+
+        self.btn_size = Window.width / 12
+        self.record_btn.size = (self.btn_size, self.btn_size)
+        self.record_btn.pos = (20, 20)
+        self.play_btn.size = (self.btn_size, self.btn_size)
+        self.play_btn.pos = (20 + self.btn_size + 20, 20)
+
+        self.hatch_btn_size = Window.width / 8
+        self.add_loop_btn.size = (self.hatch_btn_size, self.hatch_btn_size)
+        self.add_loop_btn.pos = (Window.width - self.hatch_btn_size, Window.height - self.hatch_btn_size)
+
+        self.sample_size_spinner.pos = (20, Window.height - 80)
+        self.default_sounds_spinner.pos = (20 + 160 + 20, Window.height - 80)
+
+        if hasattr(self, 'grid'):
+            self.grid_x_margin = Window.width * 0.1
+            self.grid_y_margin = Window.height * 0.15
+            self.grid.x_margin = self.grid_x_margin
+            self.grid.y_margin = self.grid_y_margin
+            self.grid.on_resize(Window.size)
+
+            grid_cy = self.grid.y + self.grid.height / 2
+            if hasattr(self, 'wave_shadow'):
+                self.wave_shadow.points = [self.grid.x + 2, grid_cy - 2, self.grid.x + self.grid.width + 2, grid_cy - 2]
+            if hasattr(self, 'wave_line'):
+                self.wave_line.points = [self.grid.x, grid_cy, self.grid.x + self.grid.width, grid_cy]
+            if hasattr(self, 'wave_line_trim'):
+                self.wave_line_trim.points = [self.grid.x, grid_cy, self.grid.x, grid_cy]
 
     def on_update(self):
         if self.writer.active and not self.default_sound:
@@ -313,19 +361,6 @@ class RecordScreen(Screen):
             self.count_in_audio.on_update()
 
         self.loop_engine.on_update()
-
-    def on_resize(self, winsize):
-        if hasattr(self, "grid"):
-            self.grid.x_margin = Window.width * 0.1
-            self.grid.y_margin = Window.height * 0.15
-            self.grid.on_resize(winsize)
-            self.viz_scale = self.grid.height * 0.4
-        self.add_loop_btn.pos = (Window.width - self.hatch_btn_size - 20, Window.height - self.hatch_btn_size - 20)
-        self.sample_size_spinner.pos = (20, Window.height - 80)
-        self.barn_btn.size = (Window.width / 8, Window.width / 8)
-        self.barn_btn.pos = (Window.width - self.barn_btn.width, 0)
-        self.barn_rect.size = self.barn_btn.size
-        self.barn_rect.pos = self.barn_btn.pos
 
     def on_exit(self):
         if self._record_scheduled_event:
