@@ -223,7 +223,7 @@ class ChordScreen(Screen):
             lawn_path = get_ui_asset_path("lawn.png")
             lawn_tex = Image(source=lawn_path).texture if os.path.exists(lawn_path) else None
             if lawn_tex:
-                Rectangle(pos=(0, 0), size=Window.size, texture=lawn_tex)
+                self.bg_rect = Rectangle(pos=(0, 0), size=Window.size, texture=lawn_tex)
 
         self.slots.clear()
         self.slot_labels.clear()
@@ -273,10 +273,51 @@ class ChordScreen(Screen):
             self.drag_label = None
 
     def on_resize(self, winsize):
-        self.barn_btn.size = (Window.width / 8, Window.width / 8)
-        self.barn_btn.pos = (Window.width - self.barn_btn.width, 0)
+        self.barn_btn_size = Window.width / 8
+        self.barn_btn.size = (self.barn_btn_size, self.barn_btn_size)
+        self.barn_btn.pos = (Window.width - self.barn_btn_size, 0)
         self.barn_rect.size = self.barn_btn.size
         self.barn_rect.pos = self.barn_btn.pos
+
+        if hasattr(self, 'bg_rect'):
+            self.bg_rect.size = Window.size
+
+        btn_size = 140
+        spacing = 16
+        total_width = len(NOTE_NAMES) * btn_size + (len(NOTE_NAMES) - 1) * spacing
+        start_x = (Window.width - total_width) / 2
+        y = Window.height - 160
+
+        for i, btn in enumerate(self.note_buttons):
+            btn.pos = (start_x + i * (btn_size + spacing), y)
+
+        btn_width = 160
+        btn_height = 100
+        spacing = 30
+        y = Window.height - 300
+
+        qualities = [("maj", "maj"), ("min", "min"), ("7", "7")]
+        total_width = len(qualities) * btn_width + (len(qualities) - 1) * spacing
+        start_x = (Window.width - total_width) / 2
+
+        for i, (key, _) in enumerate(qualities):
+            if key in self.quality_buttons:
+                self.quality_buttons[key].pos = (start_x + i * (btn_width + spacing), y)
+
+        slot_width = 240
+        slot_height = 200
+        spacing = 40
+        total_width = 4 * slot_width + 3 * spacing
+        start_x = (Window.width - total_width) / 2
+        y = Window.height / 2 - slot_height / 2
+
+        for i, slot in enumerate(self.slots):
+            slot.pos = (start_x + i * (slot_width + spacing), y)
+            slot._draw()
+
+            if i < len(self.slot_labels):
+                label = self.slot_labels[i]
+                label.pos = (slot.pos[0], slot.pos[1] + slot_height / 2 - 30)
 
     def _on_barn_press(self, *_):
         self.switch_to("garden")
