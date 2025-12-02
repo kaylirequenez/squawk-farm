@@ -10,11 +10,20 @@ def _pick_templates_for_key(role: str, slots_per_measure: int, loop_slots: int) 
     Falls back to [[0]] if no templates exist for this role/key.
     """
     template_table = ROLE_TEMPLATES.get(role)
+    if template_table is None:
+        print(f"No template table for role={role}")
+        return [[0]]
+    
     key = (slots_per_measure, loop_slots)
-    if not key in template_table:
-        # TODO: erase
+    if key not in template_table:
         print(f"No templates for role={role}, slots_per_measure={slots_per_measure}, loop_slots={loop_slots}")
+    
     templates = template_table.get(key)
+    
+    # Fallback to a default template if none exist for this key
+    if templates is None:
+        return [[0]]
+    
     return templates
 
 def expand_template(
