@@ -115,7 +115,7 @@ class Grid:
         ppb = self.get_slots_per_beat()
         seconds_per_slot = (60.0 / bpm) / ppb
         seconds = slot * seconds_per_slot
-        return int(seconds * Audio.sample_rate)
+        return round(seconds * Audio.sample_rate)
 
     def frame_to_slot(self, frame):
         bpm = self.get_bpm()
@@ -123,4 +123,4 @@ class Grid:
         seconds_per_slot = (60.0 / bpm) / ppb
         seconds = frame / Audio.sample_rate
         slot = seconds / seconds_per_slot
-        return int(slot)
+        return round(slot)

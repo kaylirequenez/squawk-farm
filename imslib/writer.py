@@ -42,6 +42,23 @@ class AudioWriter(object):
             # convert audio from num_channels to the # channels selected for writing
             data = convert_channels(data, num_channels, self.num_channels)
             self.buffers.append(data)
+            
+    def add_audio_from_file(self, filename, max_num_frames):
+        """Function to add audio from a wave file into AudioWriter's internal buffer.
+
+        :param filename: the path to the wave file to read audio data from.
+
+        """
+        wf = wave.open(filename, "r")
+        frames = wf.getnframes()
+        raw_data = wf.readframes(frames)
+        audio_data = np.frombuffer(raw_data, dtype=np.int16).astype(float) / (2**15)
+        in_channels = wf.getnchannels()
+        data = convert_channels(audio_data, in_channels, self.num_channels)
+        self.buffers.append(data[:max_num_frames * self.num_channels])
+        wf.close()
+        
+        return data
 
     def toggle(self):
         """
@@ -53,7 +70,7 @@ class AudioWriter(object):
         else:
             self.start()
 
-    def start(self):
+    def start(self, reset=True):
         """
         Starts recording audio frames, by accepting data from :meth:`add_audio`.
         """
@@ -61,7 +78,8 @@ class AudioWriter(object):
         if not self.active:
             print("AudioWriter: start capture")
             self.active = True
-            self.buffers = []
+            if reset:
+                self.buffers = []
 
     def stop(self, filename=None):
         """

@@ -46,7 +46,7 @@ def get_metronome_sound_path():
     """
     Get the absolute path to the metronome sound file.
     """
-    return os.path.join(_get_base_dir(), "squawkfarm", "Defualt_sounds", "Metronome.wav")
+    return os.path.join(_get_base_dir(), get_default_sounds_dir(), "Metronome.wav")
 
 def get_default_sounds_dir():
     """
@@ -71,7 +71,7 @@ def get_default_sound_path(sound_name):
 def get_available_default_sounds():
     """
     Get a list of available default sounds (excluding Metronome.wav and non-WAV files).
-    Returns a list of tuples: (display_name, file_name).
+    Returns a list of sound names.
     Only includes .wav files since the audio system requires WAV format.
     """
     default_sounds_dir = get_default_sounds_dir()
@@ -87,6 +87,6 @@ def get_available_default_sounds():
         if filename.lower().endswith('.wav'):
             # Convert filename to display name (bass.wav -> "bass")
             display_name = os.path.splitext(filename)[0]
-            sound_files.append((display_name, filename))
+            sound_files.append(display_name)
     
     return sound_files
