@@ -6,6 +6,8 @@ from kivy.uix.button import Button
 from kivy.clock import Clock
 from kivy.core.window import Window
 
+TERRAIN_BOUNDARY_RATIO = 0.363
+
 
 class AnimalWidget(Image):
     def __init__(self, animal, on_click_callback=None, **kwargs):
@@ -35,6 +37,9 @@ class AnimalWidget(Image):
         base_size = animal.size if animal.size is not None else (100.0, 100.0)
         self._base_width = base_size[0] * 8.0
         self._base_height = base_size[1] * 8.0
+
+        self._center_x = 0.0
+        self._center_y = 0.0
 
         kwargs.setdefault("size_hint", (None, None))
         super().__init__(**kwargs)
@@ -135,7 +140,9 @@ class AnimalWidget(Image):
                 parent.add_widget(self.shadow_image, index=0)
                 self.shadow_image.size = self.size
                 self._update_shadow_image()
-                self._update_shadow_pos(self.x, self.y)
+                if self._center_x != 0.0 or self._center_y != 0.0:
+                    new_x, new_y = self._update_shadow_pos(self._center_x, self._center_y)
+                    self.pos = (new_x, new_y)
         else:
             if self._last_parent is not None:
                 if self.click_button in self._last_parent.children:
@@ -157,8 +164,11 @@ class AnimalWidget(Image):
             self.on_click_callback(self.animal.animal_id)
     
     def move_to(self, pos):
-        self.pos = pos
-        self._update_shadow_pos(*pos)
+        ground_x, ground_y = pos
+        self._center_x = ground_x + self._base_width / 2
+        self._center_y = ground_y + self._base_height / 2
+        new_x, new_y = self._update_shadow_pos(self._center_x, self._center_y)
+        self.pos = (new_x, new_y)
 
     def update_from_animal(self, animal):
         self.animal = animal
@@ -172,11 +182,14 @@ class AnimalWidget(Image):
         self.size = (self._base_width, self._base_height)
 
         if animal.pos is not None:
-            self.pos = animal.pos
+            ground_x, ground_y = animal.pos
+            self._center_x = ground_x + self._base_width / 2
+            self._center_y = ground_y + self._base_height / 2
 
         self._update_image()
         self._update_shadow_image()
-        self._update_shadow_pos(self.x, self.y)
+        new_x, new_y = self._update_shadow_pos(self._center_x, self._center_y)
+        self.pos = (new_x, new_y)
 
     def _update_image(self):
         key = (self._facing, self._mouth_state)
@@ -203,41 +216,37 @@ class AnimalWidget(Image):
             self.shadow_image.source = path
             self.shadow_image.reload()
 
-    def _get_perspective_scale(self, ground_y, screen_height):
-        bottom_bound = screen_height * 0.08
-        top_bound = screen_height / 3
+    def _update_shadow_pos(self, center_x, center_y):
+        from kivy.core.window import Window
+        max_y = Window.height * TERRAIN_BOUNDARY_RATIO
 
-        range_height = top_bound - bottom_bound
-        if range_height <= 0:
-            return 1.0
+        y_ratio = center_y / max_y if max_y > 0 else 0.0
+        y_ratio = max(0.0, min(1.0, y_ratio))
 
-        t = (ground_y - bottom_bound) / range_height
-        t = max(0.0, min(1.0, t))
+        scale = 1.0 - 0.5 * y_ratio
 
-        min_scale = 0.33
-        max_scale = 1.0
-        return max_scale - t * (max_scale - min_scale)
+        scaled_width = self._base_width * scale
+        scaled_height = self._base_height * scale
 
-    def _update_shadow_pos(self, ground_x, ground_y):
-        scale = self._get_perspective_scale(ground_y, Window.height)
+        new_x = center_x - scaled_width / 2
+        new_y = center_y - scaled_height / 2
 
-        scaled_w = self._base_width * scale
-        scaled_h = self._base_height * scale
-
-        self.size = (scaled_w, scaled_h)
+        self.size = (scaled_width, scaled_height)
 
         if self.shadow_image is not None:
-            self.shadow_image.size = (scaled_w, scaled_h)
-            self.shadow_image.pos = (ground_x, ground_y)
+            self.shadow_image.size = (scaled_width, scaled_height)
+            self.shadow_image.pos = (new_x, new_y)
 
         if hasattr(self, 'click_button'):
             base_size = self.animal.size if self.animal.size is not None else (100.0, 100.0)
             w, h = base_size
-            size_scale = max(1.0, w / 100.0)
-            btn_w = w * self.click_button_scale * size_scale * scale
-            btn_h = h * self.click_button_scale * size_scale * scale
+            size_scale = max(1.0, w / 100.0) * scale
+            btn_w = w * self.click_button_scale * size_scale
+            btn_h = h * self.click_button_scale * size_scale
             self.click_button.size = (btn_w, btn_h)
-            self.click_button.pos = (ground_x + (scaled_w - btn_w) / 2, ground_y + (scaled_h - btn_h) * 0.6)
+            self.click_button.pos = (new_x + (scaled_width - btn_w) / 2, new_y + (scaled_height - btn_h) * 0.6)
+
+        return new_x, new_y
 
     def _set_facing(self, facing):
         if facing not in ("right", "left"):
@@ -287,14 +296,13 @@ class AnimalWidget(Image):
             others = []
 
         width, height = bounds
-        margin = 10
-        min_y = height * 0.05
-        max_y = height * 0.25
+        x, y = self._center_x, self._center_y
 
-        x, y = self.pos
+        max_center_y = height * TERRAIN_BOUNDARY_RATIO - self._hop_height
+        min_center_y = self._base_height * 1.0 / 2
 
-        tx = random.uniform(margin, width - margin)
-        ty = random.uniform(min_y, max_y)
+        tx = random.uniform(self._base_width / 2, width - self._base_width / 2)
+        ty = random.uniform(min_center_y, max(min_center_y, max_center_y))
 
         dx = tx - x
         dy = ty - y
@@ -335,7 +343,8 @@ class AnimalWidget(Image):
             if self._wander_pause_remaining <= 0:
                 self._start_new_move(bounds, others)
             else:
-                self._update_shadow_pos(self.x, self.y)
+                new_x, new_y = self._update_shadow_pos(self._center_x, self._center_y)
+                self.pos = (new_x, new_y)
 
         elif (
             self._wander_state == "moving"
@@ -364,14 +373,15 @@ class AnimalWidget(Image):
                 seg_phase = (t % seg_len) / seg_len
                 hop_offset = self._hop_height * 4.0 * seg_phase * (1.0 - seg_phase)
 
-            ground_x = base_x
-            ground_y = base_y
+            center_x = base_x
+            center_y = base_y
 
-            final_x = ground_x
-            final_y = ground_y + hop_offset
+            self._center_x = center_x
+            self._center_y = center_y + hop_offset
 
-            self._update_shadow_pos(ground_x, ground_y)
-            self.pos = (final_x, final_y)
+            adjusted_x, adjusted_y = self._update_shadow_pos(self._center_x, self._center_y)
+
+            self.pos = (adjusted_x, adjusted_y)
 
             if t >= 1.0:
                 self._wander_state = "idle"

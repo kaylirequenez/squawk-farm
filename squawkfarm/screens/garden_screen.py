@@ -20,6 +20,8 @@ from squawkfarm.widgets.egg_widget import EggWidget
 from squawkfarm.widgets.sun_widget import SunWidget
 from squawkfarm.utils import get_ui_asset_path
 
+TERRAIN_BOUNDARY_RATIO = 0.363
+
 
 class GardenScreen(Screen):
     def __init__(self, **kwargs):
@@ -86,6 +88,8 @@ class GardenScreen(Screen):
         self.sun_widget = SunWidget()
         self.add_widget(self.sun_widget)
 
+        self._prev_window_size = Window.size
+
         Window.bind(size=self.on_resize)
         Clock.schedule_interval(self._update_animals, 1.0 / 30.0)
 
@@ -98,13 +102,8 @@ class GardenScreen(Screen):
                 return
 
             width, height = Window.size
-            margin = 50
-
-            min_y = height * 0.05
-            max_y = height * 0.20
-            max_x = width - margin
-
-            spawn_x, spawn_y = self._find_non_colliding_spawn(margin, max_x, max_y, 100, min_y)
+            spawn_x = width / 2
+            spawn_y = height * 0.125
 
             animal.pos = (spawn_x, spawn_y)
 
@@ -124,15 +123,23 @@ class GardenScreen(Screen):
             return
 
         egg_x, egg_y = egg.pos
+        egg_w, egg_h = egg.size
         egg.remove_from_parent()
 
         animal = self.animals.get(animal_id)
         if animal is None:
             return
 
-        animal.pos = (egg_x, egg_y)
         widget = AnimalWidget(animal, on_click_callback=self._on_animal_click)
-        widget.move_to((egg_x, egg_y))
+
+        egg_center_x = egg_x + egg_w / 2
+        egg_center_y = egg_y + egg_h / 2
+
+        ground_x = egg_center_x - widget._base_width / 2
+        ground_y = egg_center_y - widget._base_height / 2
+
+        animal.pos = (ground_x, ground_y)
+        widget.move_to((ground_x, ground_y))
         self.animal_widgets[animal_id] = widget
         self.add_widget(widget)
 
@@ -213,6 +220,12 @@ class GardenScreen(Screen):
         pass
 
     def on_resize(self, *args):
+        prev_w, prev_h = self._prev_window_size
+        new_w, new_h = Window.size
+
+        scale_x = new_w / prev_w if prev_w > 0 else 1.0
+        scale_y = new_h / prev_h if prev_h > 0 else 1.0
+
         self.bg_rect.pos = (0, 0)
         self.bg_rect.size = Window.size
         self.b_size = Window.width / 8
@@ -227,6 +240,25 @@ class GardenScreen(Screen):
         self.chord_btn.pos = (Window.width - self.chord_btn_size - 10, Window.height - self.chord_btn_size - 10)
         self.chord_rect.size = self.chord_btn.size
         self.chord_rect.pos = self.chord_btn.pos
+
+        for animal_id, widget in self.animal_widgets.items():
+            old_x, old_y = widget.pos
+            new_x = old_x * scale_x
+            new_y = old_y * scale_y
+
+            widget.move_to((new_x, new_y))
+            animal = self.animals.get(animal_id)
+            if animal:
+                animal.pos = (new_x, new_y)
+
+        for egg in self.egg_widgets.values():
+            old_x, old_y = egg.pos
+            new_x = old_x * scale_x
+            new_y = old_y * scale_y
+
+            egg.set_pos((new_x, new_y))
+
+        self._prev_window_size = Window.size
 
     def on_barn_press(self, instance):
         self.switch_to("record")
