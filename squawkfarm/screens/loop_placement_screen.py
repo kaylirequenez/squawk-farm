@@ -132,8 +132,8 @@ class LoopPlacementScreen(Screen):
         )
         self.octave_down_button.bind(on_touch_down=self._on_octave_down_touch_down, on_touch_up=self._on_octave_down_touch_up)
 
-        # Volume control buttons (at 1/4 screen width)
-        self.volume_btn_size = Window.width / 12
+        # Volume control buttons (at 1/4 screen width, same size as octave buttons)
+        self.volume_btn_size = 100
         self.volume_label = Label(
             text="",
             size_hint=(None, None),
@@ -296,7 +296,7 @@ class LoopPlacementScreen(Screen):
         self.octave_down_button.pos = (Window.width - 220, Window.height - self.octave_btn_size - 10)
         self.octave_label.pos = (Window.width - 340, Window.height - 60)
         
-        self.volume_btn_size = Window.width / 12
+        self.volume_btn_size = 100
         self.volume_up_button.size = (self.volume_btn_size, self.volume_btn_size)
         self.volume_up_button.pos = (Window.width / 4 + 10, Window.height - self.volume_btn_size - 10)
         self.volume_down_button.size = (self.volume_btn_size, self.volume_btn_size)
