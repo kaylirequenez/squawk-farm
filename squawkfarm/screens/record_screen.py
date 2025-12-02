@@ -206,6 +206,7 @@ class RecordScreen(Screen):
         self.dragging_marker = None
         self.default_sound = None
         self._recording_started = False
+        self._record_scheduled_event = None
 
     def _set_editing_buttons_visible(self, visible):
         self.add_loop_btn.disabled = not visible
@@ -236,9 +237,7 @@ class RecordScreen(Screen):
         self._clear_marker_lines()
 
     def _clear_marker_lines(self):
-        print("TRYING TO CLEAR")  # Debug line
         if self.left_marker_line is not None:
-            print("not none")
             self.canvas.after.remove(self.left_marker_line)
             self.left_marker_line = None
 
