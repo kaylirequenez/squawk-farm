@@ -132,6 +132,31 @@ class LoopPlacementScreen(Screen):
         )
         self.octave_down_button.bind(on_touch_down=self._on_octave_down_touch_down, on_touch_up=self._on_octave_down_touch_up)
 
+        # Volume control buttons (at 1/4 screen width)
+        self.volume_btn_size = Window.width / 12
+        self.volume_label = Label(
+            text="",
+            size_hint=(None, None),
+            size=(100, 50),
+            pos=(Window.width / 4 - 50, Window.height - 60),
+            color=(0.4, 0.7, 1, 1),
+        )
+        self.volume_up_button = ImageButton(
+            source=self.up_icon_path,
+            size_hint=(None, None),
+            size=(self.volume_btn_size, self.volume_btn_size),
+            pos=(Window.width / 4 + 10, Window.height - self.volume_btn_size - 10),
+        )
+        self.volume_up_button.bind(on_press=self._on_volume_up_press)
+
+        self.volume_down_button = ImageButton(
+            source=self.down_icon_path,
+            size_hint=(None, None),
+            size=(self.volume_btn_size, self.volume_btn_size),
+            pos=(Window.width / 4 - self.volume_btn_size - 10, Window.height - self.volume_btn_size - 10),
+        )
+        self.volume_down_button.bind(on_press=self._on_volume_down_press)
+
         self.add_button = ShadowButton(
             text="[b]Add[/b]",
             markup=True,
@@ -193,6 +218,9 @@ class LoopPlacementScreen(Screen):
         self.add_widget(self.octave_label)
         self.add_widget(self.octave_up_button)
         self.add_widget(self.octave_down_button)
+        self.add_widget(self.volume_label)
+        self.add_widget(self.volume_up_button)
+        self.add_widget(self.volume_down_button)
         self.add_widget(self.add_button)
         self.add_widget(self.delete_button)
         self.add_widget(self.barn_btn)
@@ -203,6 +231,9 @@ class LoopPlacementScreen(Screen):
         self.remove_widget(self.octave_label)
         self.remove_widget(self.octave_up_button)
         self.remove_widget(self.octave_down_button)
+        self.remove_widget(self.volume_label)
+        self.remove_widget(self.volume_up_button)
+        self.remove_widget(self.volume_down_button)
         self.remove_widget(self.add_button)
         self.remove_widget(self.delete_button)
         self.remove_widget(self.barn_btn)
@@ -224,7 +255,7 @@ class LoopPlacementScreen(Screen):
             lawn_path = get_ui_asset_path("lawn.png")
             lawn_tex = Image(source=lawn_path).texture if os.path.exists(lawn_path) else None
             if lawn_tex:
-                Rectangle(pos=(0, 0), size=Window.size, texture=lawn_tex)
+                self.bg_rect = Rectangle(pos=(0, 0), size=Window.size, texture=lawn_tex)
 
         self.grid = LoopGrid(
             total_slots=self.loop_engine.get_total_slots(),
@@ -245,13 +276,33 @@ class LoopPlacementScreen(Screen):
 
         self._rebuild_piano_from_engine()
         self._add_button_widgets()
+        self._update_volume_label()
 
 
     def on_resize(self, winsize):
+        # Resize background
+        if hasattr(self, 'bg_rect'):
+            self.bg_rect.pos = (0, 0)
+            self.bg_rect.size = Window.size
+        
+        self.sample_btn_size = 80
+        self.sample_button.size = (self.sample_btn_size, self.sample_btn_size)
         self.sample_button.pos = (Window.width / 2 - self.sample_btn_size / 2, Window.height - self.sample_btn_size - 10)
+        
+        self.octave_btn_size = 100
+        self.octave_up_button.size = (self.octave_btn_size, self.octave_btn_size)
         self.octave_up_button.pos = (Window.width - 110, Window.height - self.octave_btn_size - 10)
+        self.octave_down_button.size = (self.octave_btn_size, self.octave_btn_size)
         self.octave_down_button.pos = (Window.width - 220, Window.height - self.octave_btn_size - 10)
         self.octave_label.pos = (Window.width - 340, Window.height - 60)
+        
+        self.volume_btn_size = Window.width / 12
+        self.volume_up_button.size = (self.volume_btn_size, self.volume_btn_size)
+        self.volume_up_button.pos = (Window.width / 4 + 10, Window.height - self.volume_btn_size - 10)
+        self.volume_down_button.size = (self.volume_btn_size, self.volume_btn_size)
+        self.volume_down_button.pos = (Window.width / 4 - self.volume_btn_size - 10, Window.height - self.volume_btn_size - 10)
+        self.volume_label.pos = (Window.width / 4 - 50, Window.height - 60)
+        
         self.add_button.pos = (20, Window.height - 90)
         self.delete_button.pos = (150, Window.height - 90)
         self.barn_btn.size = (Window.width / 8, Window.width / 8)
@@ -305,6 +356,32 @@ class LoopPlacementScreen(Screen):
     def _on_sample_press(self, *_):
         self.loop_engine.pause()
         self.loop_engine.play(animal_id=self.animal_id)
+
+    def _on_volume_up_press(self, *_):
+        """Increase volume of this animal's loop"""
+        loop = self.loop_engine.loops.get(self.animal_id)
+        if loop:
+            new_vol = min(1.0, loop.volume + 0.1)
+            loop.set_volume(new_vol)
+            self._update_volume_label()
+            print(f"[Volume] Up pressed, new volume: {new_vol:.2f}")
+
+    def _on_volume_down_press(self, *_):
+        """Decrease volume of this animal's loop"""
+        loop = self.loop_engine.loops.get(self.animal_id)
+        if loop:
+            new_vol = max(0.0, loop.volume - 0.1)
+            loop.set_volume(new_vol)
+            self._update_volume_label()
+            print(f"[Volume] Down pressed, new volume: {new_vol:.2f}")
+
+    def _update_volume_label(self):
+        """Update the volume label to show current volume"""
+        loop = self.loop_engine.loops.get(self.animal_id)
+        if loop:
+            self.volume_label.text = f"Vol: {loop.volume:.1f}"
+        else:
+            self.volume_label.text = ""
 
     def _on_octave_up_touch_down(self, button, touch):
         print(f"[_on_octave_up_touch_down] Called")

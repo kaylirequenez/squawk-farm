@@ -193,6 +193,31 @@ class RecordScreen(Screen):
         )
         self.default_sounds_spinner.bind(text=self._on_default_sound_selected)
 
+        # Volume buttons (same style as octave buttons in loop_placement_screen)
+        self.volume_btn_size = Window.width / 12
+        self.up_icon_path = get_ui_asset_path("up.png")
+        self.down_icon_path = get_ui_asset_path("down.png")
+        
+        self.volume_up_button = ImageButton(
+            source=self.up_icon_path,
+            size_hint=(None, None),
+            size=(self.volume_btn_size, self.volume_btn_size),
+            pos=(Window.width / 2 + 10, Window.height - self.volume_btn_size - 10),
+            opacity=0,
+            disabled=True,
+        )
+        self.volume_up_button.bind(on_press=self._on_volume_up_press)
+        
+        self.volume_down_button = ImageButton(
+            source=self.down_icon_path,
+            size_hint=(None, None),
+            size=(self.volume_btn_size, self.volume_btn_size),
+            pos=(Window.width / 2 - self.volume_btn_size - 10, Window.height - self.volume_btn_size - 10),
+            opacity=0,
+            disabled=True,
+        )
+        self.volume_down_button.bind(on_press=self._on_volume_down_press)
+
         self.max_display_points = 2000
         self.samples = []
 
@@ -220,6 +245,10 @@ class RecordScreen(Screen):
         self.play_btn.opacity = 1 if visible else 0
         self.sample_size_spinner.disabled = not visible
         self.sample_size_spinner.opacity = 1 if visible else 0
+        self.volume_up_button.disabled = not visible
+        self.volume_up_button.opacity = 1 if visible else 0
+        self.volume_down_button.disabled = not visible
+        self.volume_down_button.opacity = 1 if visible else 0
 
     def _add_button_widgets(self):
         self.add_widget(self.record_btn)
@@ -227,6 +256,8 @@ class RecordScreen(Screen):
         self.add_widget(self.add_loop_btn)
         self.add_widget(self.sample_size_spinner)
         self.add_widget(self.default_sounds_spinner)
+        self.add_widget(self.volume_up_button)
+        self.add_widget(self.volume_down_button)
         self.add_widget(self.barn_btn)
 
     def _remove_button_widgets(self):
@@ -235,6 +266,8 @@ class RecordScreen(Screen):
         self.remove_widget(self.add_loop_btn)
         self.remove_widget(self.sample_size_spinner)
         self.remove_widget(self.default_sounds_spinner)
+        self.remove_widget(self.volume_up_button)
+        self.remove_widget(self.volume_down_button)
         self.remove_widget(self.barn_btn)
         
     def _clear_editing_buttons(self):
@@ -312,6 +345,8 @@ class RecordScreen(Screen):
         self.add_widget(self.add_loop_btn)
         self.add_widget(self.sample_size_spinner)
         self.add_widget(self.default_sounds_spinner)
+        self.add_widget(self.volume_up_button)
+        self.add_widget(self.volume_down_button)
 
     def on_resize(self, *args):
         if hasattr(self, 'bg_rect'):
@@ -337,12 +372,48 @@ class RecordScreen(Screen):
         self.sample_size_spinner.pos = (20, Window.height - 80)
         self.default_sounds_spinner.pos = (20 + 160 + 20, Window.height - 80)
 
+        # Update volume button positions and sizes (top middle, resizable)
+        self.volume_btn_size = Window.width / 12
+        self.volume_up_button.size = (self.volume_btn_size, self.volume_btn_size)
+        self.volume_up_button.pos = (Window.width / 2 + 10, Window.height - self.volume_btn_size - 10)
+        self.volume_down_button.size = (self.volume_btn_size, self.volume_btn_size)
+        self.volume_down_button.pos = (Window.width / 2 - self.volume_btn_size - 10, Window.height - self.volume_btn_size - 10)
+
         if hasattr(self, 'grid'):
+            # Store old grid dimensions and marker fractions before resize
+            old_grid_x = self.grid.x
+            old_grid_width = self.grid.width
+            old_max_x = getattr(self, 'max_x', old_grid_x + old_grid_width)
+            
+            # Calculate marker positions as fractions of recorded area
+            left_fraction = None
+            right_fraction = None
+            if self.left_marker_x is not None and self.right_marker_x is not None:
+                recorded_width = old_max_x - old_grid_x
+                if recorded_width > 0:
+                    left_fraction = (self.left_marker_x - old_grid_x) / recorded_width
+                    right_fraction = (self.right_marker_x - old_grid_x) / recorded_width
+            
+            # Update grid margins and resize
             self.grid_x_margin = Window.width * 0.1
             self.grid_y_margin = Window.height * 0.15
             self.grid.x_margin = self.grid_x_margin
             self.grid.y_margin = self.grid_y_margin
             self.grid.on_resize(Window.size)
+
+            # Recalculate max_x based on sample progress
+            total_n = len(self.samples)
+            progress = max(0.0, min(1.0, total_n / float(self.max_display_points)))
+            self.max_x = self.grid.x + self.grid.width * progress
+            
+            # Restore marker positions proportionally
+            if left_fraction is not None and right_fraction is not None:
+                new_recorded_width = self.max_x - self.grid.x
+                self.left_marker_x = self.grid.x + left_fraction * new_recorded_width
+                self.right_marker_x = self.grid.x + right_fraction * new_recorded_width
+                
+                # Update sample_pixels based on new marker positions
+                self.sample_pixels = self.right_marker_x - self.left_marker_x
 
             grid_cy = self.grid.y + self.grid.height / 2
             if hasattr(self, 'wave_shadow'):
@@ -351,6 +422,12 @@ class RecordScreen(Screen):
                 self.wave_line.points = [self.grid.x, grid_cy, self.grid.x + self.grid.width, grid_cy]
             if hasattr(self, 'wave_line_trim'):
                 self.wave_line_trim.points = [self.grid.x, grid_cy, self.grid.x, grid_cy]
+            
+            # Update marker lines and waveform if we have data
+            if self.left_marker_line is not None:
+                self._update_marker_lines()
+            elif len(self.samples) > 0:
+                self._update_wave()
 
     def on_update(self):
         if self.writer.active and not self.default_sound:
@@ -392,6 +469,14 @@ class RecordScreen(Screen):
 
     def _on_play_press(self, *_):
         self.loop_engine.toggle_play_recording_preview()
+
+    def _on_volume_up_press(self, *_):
+        new_volume = self.loop_engine.adjust_recording_volume(0.1)
+        print(f"Volume: {new_volume:.1f}")
+
+    def _on_volume_down_press(self, *_):
+        new_volume = self.loop_engine.adjust_recording_volume(-0.1)
+        print(f"Volume: {new_volume:.1f}")
         
     def _adjust_markers_for_sample_size_change(self):
         if not self.left_marker_x:

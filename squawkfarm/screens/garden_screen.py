@@ -112,8 +112,11 @@ class GardenScreen(Screen):
             self.egg_widgets[animal.animal_id] = egg
             self.add_widget(egg)
 
+            # Mute the animal while it's still an egg
             if animal.animal_id in self.loop_engine.loops:
-                self.loop_engine.set_loop_volume(animal.animal_id, 0.0)
+                loop = self.loop_engine.loops[animal.animal_id]
+                egg.pre_hatch_volume = loop.volume  # Store original volume
+                loop.set_volume(0.0)
         else:
             widget.update_from_animal(animal)
 
@@ -144,7 +147,9 @@ class GardenScreen(Screen):
         self.add_widget(widget)
 
         if animal_id in self.loop_engine.loops:
-            self.loop_engine.set_loop_volume(animal_id, 1.0)
+            # Restore the volume that was set in the record screen
+            if hasattr(egg, 'pre_hatch_volume'):
+                self.loop_engine.loops[animal_id].set_volume(egg.pre_hatch_volume)
             self.loop_engine.auto_generate_for_animal(animal_id)
             self.loop_engine.pause()
             self.loop_engine.play(start_time=0.0, loop=True)

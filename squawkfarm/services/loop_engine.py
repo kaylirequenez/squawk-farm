@@ -119,13 +119,17 @@ class LoopEngine:
 
     def set_recording(self, animal_id):
         audio_path = get_recording_wav_path(animal_id, "raw")
+        existing_volume = None
         if animal_id in self.loops:
             start_frame = self.loops[animal_id].start_frame
             num_frames = self.loops[animal_id].num_frames
+            existing_volume = self.loops[animal_id].volume
         else:
             start_frame = 0
             num_frames = None
         self.recording = Recording(audio_path, start_frame, num_frames)
+        if existing_volume is not None:
+            self.recording.set_volume(existing_volume)
         
     def set_recording_to_preset(self, audio_path):
         wf = WaveFile(audio_path)
@@ -166,6 +170,8 @@ class LoopEngine:
         start_frame = self.recording.start_frame
         num_frames = self.recording.get_num_frames()
         trimmed_data = self.recording.trimmed.data
+        volume = self.recording.get_volume()  # Get the volume from the recording
+        print(f"[finalize_animal_loop] Recording volume: {volume}")
         audio_data, base_midi = tune_sample_and_save(animal_id, trimmed_data)
         self.composer.handle_first_animal_if_needed(base_midi)
 
@@ -174,7 +180,8 @@ class LoopEngine:
             beats = self.slot_to_beat(slots)
             role = self.composer.guess_initial_role(base_midi, beats)
 
-        self.loops[animal_id] = Loop(audio_data, start_frame, num_frames, base_midi, role)
+        self.loops[animal_id] = Loop(audio_data, start_frame, num_frames, base_midi, role, volume)
+        print(f"[finalize_animal_loop] Loop created with volume: {self.loops[animal_id].volume}")
         self.composer.register_animal_role(animal_id, role)
         
     def delete_animal_loop(self, animal_id):
@@ -283,6 +290,23 @@ class LoopEngine:
             self.audio_manager.pause()
         else:
             self.play_recording_preview(offset, repeat)
+
+    def set_recording_volume(self, volume):
+        if self.recording is not None:
+            self.recording.set_volume(volume)
+
+    def get_recording_volume(self):
+        if self.recording is not None:
+            return self.recording.get_volume()
+        return 0.5  # Default volume
+
+    def adjust_recording_volume(self, delta):
+        """Adjust recording volume by delta (e.g., +0.1 or -0.1)"""
+        if self.recording is not None:
+            new_volume = self.recording.get_volume() + delta
+            self.recording.set_volume(new_volume)
+            return self.recording.get_volume()
+        return 0.5
     
     def set_volume(self, volume):
         self.audio_manager.set_volume(volume)

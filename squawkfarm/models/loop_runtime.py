@@ -14,6 +14,7 @@ class Recording(object):
         num_frames = num_frames if num_frames is not None else self.last_frame - start_frame
 
         self.trimmed = WaveBuffer(audio_path, self.start_frame, num_frames)
+        self.volume = 0.5  # Default volume
 
     def get_num_frames(self):
         return self.trimmed.get_num_frames()
@@ -22,8 +23,14 @@ class Recording(object):
         gen = WaveGenerator(self.trimmed, loop)
 
         gen.frame = frame_offset
-        gen.set_gain(0.5)
+        gen.set_gain(self.volume)
         return gen
+
+    def set_volume(self, volume):
+        self.volume = max(0.0, min(1.0, volume))
+
+    def get_volume(self):
+        return self.volume
 
     def set_left_margin(self, start_frame):
         shift = start_frame - self.start_frame
@@ -163,6 +170,7 @@ class Loop(object):
 
         gen.frame = frame_offset
         gen.set_gain(self.volume)
+        print(f"[Loop.get_generator] Setting gain to {self.volume}")
         return gen
 
     def set_volume(self, volume):
