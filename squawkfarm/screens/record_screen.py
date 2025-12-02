@@ -253,8 +253,16 @@ class RecordScreen(Screen):
 
         self.canvas.before.clear()
         self.canvas.clear()
+        self.canvas.after.clear()
 
-        # Add layered backgrounds: lawn.png then board.png on top
+        self.left_marker_line = None
+        self.right_marker_line = None
+        self.left_marker_x = None
+        self.right_marker_x = None
+        self.samples = []
+        self.default_sound = None
+        self._recording_started = False
+
         with self.canvas.before:
             Color(1, 1, 1, 1)
             lawn_path = get_ui_asset_path("lawn.png")
