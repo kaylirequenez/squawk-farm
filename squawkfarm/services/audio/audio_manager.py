@@ -20,7 +20,7 @@ class AudioManager:
         self.mixer.set_gain(0.75)
         self.scheduler.set_generator(self.mixer)
 
-        self.audio = Audio(2)
+        self.audio = Audio(1)
         self.audio.set_generator(self.scheduler)
 
         self.playing = False

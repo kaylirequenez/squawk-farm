@@ -236,6 +236,8 @@ class LoopPlacementScreen(Screen):
     def _on_toggle_sequence_press(self, *_):
         self.loop_engine.toggle_rhythm_option(self.animal_id)
         self._rebuild_piano_from_engine()
+        self._destroy_nowbar()
+        self._stop_preview()
 
     def on_enter(self, animal_id):
         self.animal_id = animal_id
@@ -375,7 +377,6 @@ class LoopPlacementScreen(Screen):
                 bottom_y=self.grid.y,
                 top_y=self.grid.y + self.grid.height,
             )
-            print("Nowbar variables: ", self.nowbar.duration, self.nowbar.start_x, self.nowbar.end_x,)
             self.canvas.after.add(self.nowbar)
 
     def _destroy_nowbar(self):
@@ -477,11 +478,10 @@ class LoopPlacementScreen(Screen):
 
     def _do_octave_shift(self):
         """Perform a single octave shift"""
+        self._destroy_nowbar()
+        self._stop_preview()
         self.loop_engine.shift_animal_octave(self.animal_id, self._octave_shift_direction)
         self._rebuild_piano_from_engine()
-        self._stop_preview()
-        self._destroy_nowbar()
-        self._start_preview()
 
     def _on_add_press(self, *_):
         if self._adding_note:

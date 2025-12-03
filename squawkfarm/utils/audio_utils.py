@@ -52,7 +52,6 @@ def tune_sample_and_save(animal_id, data, num_channels=1):
     if num_channels != 1:
         data = ensure_mono_audio(data, num_channels)
     
-    input_len = len(data)
     # Detect pitch and tune to nearest semitone
     f0 = _estimate_f0_median(data, Audio.sample_rate)
     if f0 > 0:
@@ -60,6 +59,8 @@ def tune_sample_and_save(animal_id, data, num_channels=1):
         target_midi = round(src_midi)  # Round to nearest semitone
         n_steps = target_midi - src_midi
         y_tuned = librosa.effects.pitch_shift(data, sr=Audio.sample_rate, n_steps=n_steps)
+        
+        y_tuned = fade_in_out(y_tuned, fade_duration_ms=10)
     else:
         # No pitch detected, use original and default to middle C
         # TODO: ask them to re-record
@@ -96,4 +97,22 @@ def time_to_frame(time_sec):
 def frame_to_time(frame):
     return frame / float(Audio.sample_rate)
 
+def fade_in_out(data, fade_duration_ms=10):
+    """
+    Apply fade-in and fade-out to audio data.
+    
+    :param data: Audio data as numpy array.
+    :param fade_duration_ms: Duration of fade in milliseconds.
+    :returns: Audio data with fade applied.
+    """
+    fade_samples = int(Audio.sample_rate * fade_duration_ms / 1000)
 
+    fade_window = np.hanning(fade_samples * 2)[:fade_samples]
+
+    data[:fade_samples] = data[:fade_samples] * fade_window
+    
+    fade_out_window = np.hanning(fade_samples * 2)[fade_samples:]
+
+    data[-fade_samples:] = data[-fade_samples:] * fade_out_window
+
+    return data

@@ -241,12 +241,18 @@ class LoopEngine:
         loop = self.loops.get(animal_id)
 
         semitones = 12 * direction
+        
+        lowest = loop.midi + semitones
+        highest = max(loop.instances.values()) + semitones
+        if lowest < 21 or highest > 108:
+            return
 
         loop.midi += semitones
+        loop.octave_shift += direction
         for slot in loop.instances:
             loop.instances[slot] += semitones
             
-        loop.role = self.composer.guess_initial_role(loop.midi, self.slot_to_beat(len(loop.instances))) 
+        loop.role = self.composer.guess_initial_role(loop.original_midi + 12 * loop.octave_shift, self.slot_to_beat(len(loop.instances))) 
         self.rhythm_candidates = self._compute_rhythm_candidates_for_animal(animal_id)
         self.rhythm_candidate_index = 0
 
@@ -286,7 +292,6 @@ class LoopEngine:
         if self.audio_manager.is_playing():
             self.audio_manager.pause()
         else:
-            print(self.audio_manager.mixer.gain)
             self.play_recording_preview(offset, repeat)
 
     def set_recording_volume(self, volume):
@@ -368,7 +373,7 @@ class LoopEngine:
         loop = self.loops[animal_id]
 
         pitch_map, ui_base_midi = generate_constrained_pentatonic_pitch_map(
-            base_midi=loop.midi,
+            base_midi=loop.original_midi + 12 * loop.octave_shift,
             root_midi=self.composer.root,
             start_slots=start_slots,
         )

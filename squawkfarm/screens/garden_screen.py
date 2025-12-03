@@ -177,7 +177,6 @@ class GardenScreen(Screen):
             # Restore the volume that was set in the record screen
             if hasattr(egg, 'pre_hatch_volume'):
                 self.loop_engine.loops[animal_id].set_volume(egg.pre_hatch_volume)
-            self.loop_engine.auto_generate_for_animal(animal_id)
             self.loop_engine.pause()
             self.loop_engine.play(start_time=0.0, loop=True)
 

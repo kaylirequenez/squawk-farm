@@ -242,8 +242,6 @@ class RecordScreen(Screen):
         self.play_btn.opacity = 1 if visible else 0
         self.sample_size_spinner.disabled = not visible
         self.sample_size_spinner.opacity = 1 if visible else 0
-        self.volume_slider.disabled = not visible
-        self.volume_slider.opacity = 1 if visible else 0
 
     def _add_button_widgets(self):
         self.add_widget(self.record_btn)
@@ -251,7 +249,6 @@ class RecordScreen(Screen):
         self.add_widget(self.add_loop_btn)
         self.add_widget(self.sample_size_spinner)
         self.add_widget(self.default_sounds_spinner)
-        self.add_widget(self.volume_slider)
         self.add_widget(self.barn_btn)
 
     def _remove_button_widgets(self):
@@ -266,6 +263,7 @@ class RecordScreen(Screen):
     def _clear_editing_buttons(self):
         self._set_editing_buttons_visible(False)
         self._clear_marker_lines()
+        self.remove_widget(self.volume_slider)
 
     def _clear_marker_lines(self):
         if self.left_marker_line is not None:
@@ -310,6 +308,7 @@ class RecordScreen(Screen):
             skip_outer_lines=True,
         )
         self.canvas.add(self.grid)
+        
         self._position_volume_slider_to_grid()
         self._update_volume_label()
 
@@ -335,6 +334,7 @@ class RecordScreen(Screen):
             )
 
         self._add_button_widgets()
+        self.remove_widget(self.volume_slider)
 
     def on_resize(self, *args):
         if hasattr(self, 'bg_rect'):
@@ -527,7 +527,6 @@ class RecordScreen(Screen):
         if self.loop_engine.is_playing():
             self.loop_engine.pause()
             self._stop_preview()
-            print("Preview paused")
         else:
             start_time = 0.0
             if self.nowbar:
@@ -537,8 +536,6 @@ class RecordScreen(Screen):
                 else:
                     self.nowbar.reset()
                 
-            print(f"Starting preview at {start_time:.2f} sec")
-            print("Recording duration:", self.loop_engine.get_recording_duration())
             self._start_preview(start_time)
         
     def _adjust_markers_for_sample_size_change(self):
@@ -646,6 +643,7 @@ class RecordScreen(Screen):
         
     def _setup_editing_after_recording(self, large_enough):
         self.loop_engine.set_recording(self.animal_id)
+        self.add_widget(self.volume_slider)
         
         if large_enough:
             sample_size = self.sample_sizes[self.current_sample_size]

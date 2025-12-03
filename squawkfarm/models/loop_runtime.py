@@ -2,6 +2,7 @@ from imslib.wavegen import WaveGenerator
 from imslib.wavesrc import WaveBuffer, WaveFile
 
 from squawkfarm.utils import tune_to_midi
+from squawkfarm.utils.audio_utils import fade_in_out
 
 class Recording(object):
     def __init__(self, audio_path, start_frame=0, num_frames=None):
@@ -14,6 +15,7 @@ class Recording(object):
         num_frames = num_frames if num_frames is not None else self.last_frame - start_frame
 
         self.trimmed = WaveBuffer(audio_path, self.start_frame, num_frames)
+        self.trimmed.data = fade_in_out(self.trimmed.data)
         self.volume = 0.5  # Default volume
 
     def get_num_frames(self):
@@ -38,10 +40,12 @@ class Recording(object):
         num_frames = self.get_num_frames() - shift
 
         self.trimmed = WaveBuffer(self.audio_path, self.start_frame, num_frames)
+        self.trimmed.data = fade_in_out(self.trimmed.data)
 
     def set_right_margin(self, end_frame):
         num_frames = end_frame - self.start_frame
         self.trimmed = WaveBuffer(self.audio_path, self.start_frame, num_frames)
+        self.trimmed.data = fade_in_out(self.trimmed.data)
 
     def shift(self, num_frames):
         tot = self.get_num_frames()
@@ -139,6 +143,8 @@ class Loop(object):
         self.original_midi = midi  # Track the original MIDI for tuning reference
         self.volume = volume
         self.role = role
+        
+        self.octave_shift = 0
 
         self.instances: dict[int, int] = {} 
         loop_instances = loop_instances if loop_instances else []
