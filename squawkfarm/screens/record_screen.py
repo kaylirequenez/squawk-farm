@@ -473,6 +473,8 @@ class RecordScreen(Screen):
         self.switch_to("garden")
 
     def _on_record_press(self, *_):
+        if self.count_in_audio.generator is not None:
+            return
         if not self.writer.active:
             self._destroy_nowbar()
             self._clear_editing_buttons()
@@ -595,6 +597,7 @@ class RecordScreen(Screen):
         Clock.schedule_once(lambda dt: self._begin_actual_recording(), count_in_duration)
 
     def _begin_actual_recording(self, reset=True):
+        self.count_in_audio.set_generator(None)
         self._recording_started = True
         self.record_btn.source = self.pause_icon_path
         self.writer.start(reset)
@@ -667,6 +670,9 @@ class RecordScreen(Screen):
         
 
     def _play_count_in(self):
+        if self.count_in_audio.generator is not None:
+            return
+            
         try:
             wf = WaveFile(get_metronome_sound_path())
             metronome_data = wf.get_frames(0, wf.end)
