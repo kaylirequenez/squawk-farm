@@ -11,12 +11,9 @@ def _pick_templates_for_key(role: str, slots_per_measure: int, loop_slots: int) 
     """
     template_table = ROLE_TEMPLATES.get(role)
     if template_table is None:
-        print(f"No template table for role={role}")
         return [[0]]
     
     key = (slots_per_measure, loop_slots)
-    if key not in template_table:
-        print(f"No templates for role={role}, slots_per_measure={slots_per_measure}, loop_slots={loop_slots}")
     
     templates = template_table.get(key)
     

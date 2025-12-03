@@ -23,7 +23,6 @@ def ensure_mono_audio(audio_data, num_channels):
         return convert_channels(audio_data, 2, 1)
     else:
         # For other channel counts, average all channels
-        print(f"[ensure_mono_audio] Converting {num_channels} channels to mono")
         return convert_channels(audio_data, num_channels, 1)
 
 
@@ -51,7 +50,6 @@ def tune_sample_and_save(animal_id, data, num_channels=1):
     """
     # Convert to mono if stereo
     if num_channels != 1:
-        print(f"[tune_sample_and_save] Converting {num_channels}-channel audio to mono")
         data = ensure_mono_audio(data, num_channels)
     
     input_len = len(data)
@@ -66,10 +64,6 @@ def tune_sample_and_save(animal_id, data, num_channels=1):
         # No pitch detected, use original and default to middle C
         # TODO: ask them to re-record
         raise ValueError("No pitch detected")
-    
-    output_len = len(y_tuned)
-    if input_len != output_len:
-        print(f"[tune_sample_and_save] WARNING: Length changed! Input: {input_len}, Output: {output_len}, n_steps: {n_steps}, src_midi: {src_midi:.2f}, target_midi: {target_midi}")
     
     # Save tuned audio
     tuned_path = get_recording_wav_path(animal_id, "tuned")
@@ -94,10 +88,6 @@ def tune_to_midi(data, base_midi, target_midi):
         y_shifted = data
     else:
         y_shifted = librosa.effects.pitch_shift(data, sr=Audio.sample_rate, n_steps=semitones)
-    
-    output_len = len(y_shifted)
-    if input_len != output_len:
-        print(f"[tune_to_midi] WARNING: Length changed! Input: {input_len}, Output: {output_len}, semitones: {semitones}, base_midi: {base_midi}, target_midi: {target_midi}")
     
     return y_shifted
 

@@ -171,7 +171,6 @@ class LoopEngine:
         num_frames = self.recording.get_num_frames()
         trimmed_data = self.recording.trimmed.data
         volume = self.recording.get_volume()  # Get the volume from the recording
-        print(f"[finalize_animal_loop] Recording volume: {volume}")
         audio_data, base_midi = tune_sample_and_save(animal_id, trimmed_data)
         self.composer.handle_first_animal_if_needed(base_midi)
 
@@ -181,7 +180,6 @@ class LoopEngine:
             role = self.composer.guess_initial_role(base_midi, beats)
 
         self.loops[animal_id] = Loop(audio_data, start_frame, num_frames, base_midi, role, volume)
-        print(f"[finalize_animal_loop] Loop created with volume: {self.loops[animal_id].volume}")
         self.composer.register_animal_role(animal_id, role)
         
     def delete_animal_loop(self, animal_id):
@@ -434,9 +432,6 @@ class LoopEngine:
             min_score=None,  # you can tweak this later
         )
         
-        for c in candidates:
-            print(f"RHYTHM CANDIDATE: score={c['score']}, pattern={c['pattern']}")
-
         self.rhythm_candidates = candidates
         self.rhythm_candidate_index = 0
 

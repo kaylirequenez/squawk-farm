@@ -472,11 +472,9 @@ class RecordScreen(Screen):
 
     def _on_volume_up_press(self, *_):
         new_volume = self.loop_engine.adjust_recording_volume(0.1)
-        print(f"Volume: {new_volume:.1f}")
 
     def _on_volume_down_press(self, *_):
         new_volume = self.loop_engine.adjust_recording_volume(-0.1)
-        print(f"Volume: {new_volume:.1f}")
         
     def _adjust_markers_for_sample_size_change(self):
         if not self.left_marker_x:
@@ -643,7 +641,6 @@ class RecordScreen(Screen):
             return beat_duration * 4
             
         except Exception as e:
-            print(f"Error playing count-in: {e}")
             return 0.1
 
     def _update_marker_lines(self):

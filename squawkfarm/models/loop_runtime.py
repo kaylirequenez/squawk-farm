@@ -170,7 +170,6 @@ class Loop(object):
 
         gen.frame = frame_offset
         gen.set_gain(self.volume)
-        print(f"[Loop.get_generator] Setting gain to {self.volume}")
         return gen
 
     def set_volume(self, volume):

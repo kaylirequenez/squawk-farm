@@ -388,7 +388,6 @@ class LoopPlacementScreen(Screen):
             new_vol = min(1.0, loop.volume + 0.1)
             loop.set_volume(new_vol)
             self._update_volume_label()
-            print(f"[Volume] Up pressed, new volume: {new_vol:.2f}")
 
     def _on_volume_down_press(self, *_):
         """Decrease volume of this animal's loop"""
@@ -397,7 +396,6 @@ class LoopPlacementScreen(Screen):
             new_vol = max(0.0, loop.volume - 0.1)
             loop.set_volume(new_vol)
             self._update_volume_label()
-            print(f"[Volume] Down pressed, new volume: {new_vol:.2f}")
 
     def _update_volume_label(self):
         """Update the volume label to show current volume"""
@@ -408,7 +406,6 @@ class LoopPlacementScreen(Screen):
             self.volume_label.text = ""
 
     def _on_octave_up_touch_down(self, button, touch):
-        print(f"[_on_octave_up_touch_down] Called")
         if button.collide_point(*touch.pos):
             self._octave_shift_active = True
             self._octave_shift_direction = 1
@@ -417,13 +414,11 @@ class LoopPlacementScreen(Screen):
         return False
 
     def _on_octave_up_touch_up(self, button, touch):
-        print(f"[_on_octave_up_touch_up] Called")
         self._octave_shift_active = False
         self._stop_continuous_octave_shift()
         return True
 
     def _on_octave_down_touch_down(self, button, touch):
-        print(f"[_on_octave_down_touch_down] Called")
         if button.collide_point(*touch.pos):
             self._octave_shift_active = True
             self._octave_shift_direction = -1
@@ -440,11 +435,8 @@ class LoopPlacementScreen(Screen):
         """Schedule continuous octave shifting"""
         from kivy.clock import Clock
         
-        print(f"[_start_continuous_octave_shift] Starting with direction={self._octave_shift_direction}")
-        
         # Cancel any existing scheduled event
         if self._octave_shift_event:
-            print(f"[_start_continuous_octave_shift] Canceling existing event")
             self._octave_shift_event.cancel()
         
         # Perform first shift immediately
@@ -455,7 +447,6 @@ class LoopPlacementScreen(Screen):
             lambda dt: self._do_octave_shift(),
             0.1
         )
-        print(f"[_start_continuous_octave_shift] Scheduled repeat shifts")
 
     def _stop_continuous_octave_shift(self):
         """Cancel continuous octave shifting"""
@@ -478,13 +469,6 @@ class LoopPlacementScreen(Screen):
             self.loop_engine.loops[self.animal_id].num_frames
         )
         quantized_slots = quantize_to_beat_slots(loop_slots, self.loop_engine.get_slots_per_beat())
-        
-        # Debug output
-        num_frames = self.loop_engine.loops[self.animal_id].num_frames
-        slots_per_beat = self.loop_engine.get_slots_per_beat()
-        beats = loop_slots / slots_per_beat
-        quantized_beats = quantized_slots / slots_per_beat
-        print(f"[_on_add_press] num_frames={num_frames}, loop_slots={loop_slots}, beats={beats:.3f}, quantized_slots={quantized_slots}, quantized_beats={quantized_beats:.3f}")
         
         width = self.grid.slots_to_pixels(quantized_slots)
         height = self.grid.slot_height()
@@ -515,7 +499,6 @@ class LoopPlacementScreen(Screen):
 
         hammer_path = get_ui_asset_path("hammer.png")
         if not os.path.exists(hammer_path):
-            print(f"Warning: hammer.png not found at {hammer_path}")
             return
 
         hammer_tex = Image(source=hammer_path).texture

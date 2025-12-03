@@ -23,6 +23,7 @@ from squawkfarm.widgets.sun_widget import SunWidget
 from squawkfarm.utils import get_ui_asset_path
 
 TERRAIN_BOUNDARY_RATIO = 0.363
+MAX_ANIMALS = 10
 
 
 class GardenScreen(Screen):
@@ -137,6 +138,8 @@ class GardenScreen(Screen):
                 loop = self.loop_engine.loops[animal.animal_id]
                 egg.pre_hatch_volume = loop.volume  # Store original volume
                 loop.set_volume(0.0)
+            
+            self._update_barn_button_state()
         else:
             widget.update_from_animal(animal)
 
@@ -193,6 +196,7 @@ class GardenScreen(Screen):
             self.loop_engine.toggle_play(loop=True)
 
     def on_enter(self):
+        self._update_barn_button_state()
         if self.loop_engine.loops:
             self.loop_engine.play(start_time=0.0, loop=True)
 
@@ -295,7 +299,21 @@ class GardenScreen(Screen):
         self._prev_window_size = Window.size
 
     def on_barn_press(self, instance):
+        if self._get_total_animal_count() >= MAX_ANIMALS:
+            return
         self.switch_to("record")
+
+    def _get_total_animal_count(self):
+        """Get total count of animals (hatched + eggs)."""
+        return len(self.animal_widgets) + len(self.egg_widgets)
+
+    def _update_barn_button_state(self):
+        """Update barn button appearance based on animal count."""
+        if self._get_total_animal_count() >= MAX_ANIMALS:
+            # Dim the barn button when at max capacity
+            self.barn_button.opacity = 0.4
+        else:
+            self.barn_button.opacity = 1.0
 
     def _on_chord_press(self, *_):
         self.switch_to("chord")
@@ -339,12 +357,10 @@ class GardenScreen(Screen):
         animal_data_path = os.path.join("data", "animals", animal_id)
         if os.path.exists(animal_data_path):
             shutil.rmtree(animal_data_path)
-            print(f"[GardenScreen] Deleted animal data: {animal_data_path}")
 
         # Also delete the recording if it exists
         if animal and animal.recording_path and os.path.exists(animal.recording_path):
             os.remove(animal.recording_path)
-            print(f"[GardenScreen] Deleted recording: {animal.recording_path}")
 
         self.num_animals = len(self.animal_widgets)
-        print(f"[GardenScreen] Animal {animal_id} permanently deleted")
+        self._update_barn_button_state()
