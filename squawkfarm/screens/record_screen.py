@@ -818,7 +818,7 @@ class RecordScreen(Screen):
         out_dir = get_animal_data_dir(self.animal_id)
         out_path = os.path.join(out_dir, "open.png")
 
-        _, _, creature_size = render_creature_image(
+        render_creature_image(
             wav_path,
             out_dir,
             size=(640, 480),
@@ -829,7 +829,7 @@ class RecordScreen(Screen):
             image_path=out_path,
             recording_path=wav_path,
             pos=(50, 50),
-            size=creature_size,
+            size=(100, 100),
         )
 
         garden = next((s for s in self.manager.screens if s.name == "garden"), None)
