@@ -94,6 +94,23 @@ class LoopPlacementScreen(Screen):
             )
         self.barn_btn.bind(on_press=self._on_barn_press)
 
+        # Trash button in bottom left corner (same size as barn)
+        self.trash_path = get_ui_asset_path("trash.png")
+        self.trash_texture = Image(source=self.trash_path).texture
+        self.trash_btn = Button(
+            size_hint=(None, None),
+            size=(self.barn_btn_size, self.barn_btn_size),
+            pos=(0, 0),
+            background_normal="",
+            background_color=(1, 1, 1, 0),
+        )
+        with self.trash_btn.canvas.before:
+            self.trash_rect = Rectangle(
+                pos=self.trash_btn.pos,
+                size=self.trash_btn.size,
+                texture=self.trash_texture,
+            )
+
         self.play_icon_path = get_ui_asset_path("play.png")
         self.sample_btn_size = 80
         self.sample_button = ImageButton(
@@ -224,6 +241,7 @@ class LoopPlacementScreen(Screen):
         self.add_widget(self.add_button)
         self.add_widget(self.delete_button)
         self.add_widget(self.barn_btn)
+        self.add_widget(self.trash_btn)
         self.add_widget(self.toggle_sequence_btn)
 
     def _remove_button_widgets(self):
@@ -237,6 +255,7 @@ class LoopPlacementScreen(Screen):
         self.remove_widget(self.add_button)
         self.remove_widget(self.delete_button)
         self.remove_widget(self.barn_btn)
+        self.remove_widget(self.trash_btn)
         self.remove_widget(self.toggle_sequence_btn)
 
     def _on_toggle_sequence_press(self, *_):
@@ -309,6 +328,11 @@ class LoopPlacementScreen(Screen):
         self.barn_btn.pos = (Window.width - self.barn_btn.width, 0)
         self.barn_rect.size = self.barn_btn.size
         self.barn_rect.pos = self.barn_btn.pos
+        # Resize trash button (same size as barn, bottom left)
+        self.trash_btn.size = (Window.width / 8, Window.width / 8)
+        self.trash_btn.pos = (0, 0)
+        self.trash_rect.size = self.trash_btn.size
+        self.trash_rect.pos = self.trash_btn.pos
 
         if hasattr(self, "grid"):
             self.grid.x_margin = Window.width * 0.1
@@ -631,10 +655,11 @@ class LoopPlacementScreen(Screen):
         new_x = touch.x - off_x
         new_y = touch.y - off_y
 
-        # Clamp inside the grid in window coords
-        new_x = max(self.grid.x,
+        # Allow x to go to 0 (towards trash) but not past right edge of grid
+        new_x = max(0,
                     min(new_x, self.grid.x + self.grid.width - self._drag_note.size[0]))
-        new_y = max(self.grid.y,
+        # Allow y to go down to 0 (towards trash) but not above grid
+        new_y = max(0,
                     min(new_y, self.grid.y + self.grid.height - self._drag_note.size[1]))
 
         self._drag_note.set_position(new_x, new_y)
@@ -652,6 +677,32 @@ class LoopPlacementScreen(Screen):
         self._drag_note = None
 
         old_start_slot = self._drag_note_start_slot
+
+        # Check if note was dropped in the trash zone
+        trash_x, trash_y = self.trash_btn.pos
+        trash_w, trash_h = self.trash_btn.size
+        note_center_x = note.pos[0] + note.size[0] / 2
+        note_center_y = note.pos[1] + note.size[1] / 2
+
+        if (trash_x <= note_center_x <= trash_x + trash_w and
+            trash_y <= note_center_y <= trash_y + trash_h):
+            # Delete the note
+            if old_start_slot is not None:
+                self.loop_engine.remove_loop_instance(self.animal_id, old_start_slot)
+            self.piano.remove_note(note)
+            if note == self._new_note:
+                self._adding_note = False
+                self._new_note = None
+            self._rebuild_piano_from_engine()
+            return True
+
+        # If note was dragged below the grid, snap it back to the bottom row
+        if note.pos[1] < self.grid.y:
+            note.set_position(note.pos[0], self.grid.y)
+
+        # If note was dragged left of the grid, snap it back to the left edge
+        if note.pos[0] < self.grid.x:
+            note.set_position(self.grid.x, note.pos[1])
 
         column = self.grid.x_to_slot_index(note.pos[0])
         row = self.grid.y_to_slot_index(note.pos[1])
