@@ -7,8 +7,10 @@ from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.core.window import Window
 from kivy.graphics import Rectangle, Color
+from kivy.clock import Clock
 
 from squawkfarm.services.loop_engine import LoopEngine
+from squawkfarm.ui.nowbar import NowBar
 
 
 class ImageButton(ButtonBehavior, Image):
@@ -38,7 +40,7 @@ from imslib.screen import Screen
 
 from squawkfarm.ui.loop_grid import LoopGrid
 from squawkfarm.utils import get_ui_asset_path
-from squawkfarm.widgets.animal_piano import AnimalPiano, AnimalPianoNote
+from squawkfarm.widgets.animal_piano import AnimalPiano
 
 MAJOR_OFFSETS = [0, 2, 4, 5, 7, 9, 11, 12]
 MINOR_OFFSETS = [0, 2, 3, 5, 7, 8, 10, 12]
@@ -112,6 +114,7 @@ class LoopPlacementScreen(Screen):
             )
 
         self.play_icon_path = get_ui_asset_path("play.png")
+        self.pause_icon_path = get_ui_asset_path("pause.png")
         self.sample_btn_size = 80
         self.sample_button = ImageButton(
             source=self.play_icon_path,
@@ -232,6 +235,9 @@ class LoopPlacementScreen(Screen):
             font_size=20,
         )
         self.toggle_sequence_btn.bind(on_press=self._on_toggle_sequence_press)
+        
+        self.nowbar = None
+        self.playing_preview = False
 
     def _add_button_widgets(self):
         self.add_widget(self.sample_button)
@@ -289,6 +295,8 @@ class LoopPlacementScreen(Screen):
             skip_outer_lines=True,
         )
         self.canvas.before.add(self.grid)
+        
+        self.duration = self.loop_engine.slot_to_time(self.loop_engine.get_total_slots())
 
         self.piano.size = Window.size
         self.piano.pos = (0, 0)
@@ -345,17 +353,33 @@ class LoopPlacementScreen(Screen):
 
         self.piano.size = Window.size
         self.piano.pos = (0, 0)
+        
+        if self.nowbar:
+            self.nowbar.on_resize(self.grid.x, self.grid.x + self.grid.width, self.grid.y, self.grid.y + self.grid.height)
 
+    def _stop_preview(self):
+        self.sample_button.source = self.play_icon_path
+        self.playing_preview = False
+        if self.loop_engine.is_playing():
+            self.loop_engine.pause()
 
     def on_update(self):
         self.loop_engine.on_update()
+        
+        if self.nowbar:
+            if self.loop_engine.is_playing():
+                self.nowbar.on_update(Clock.frametime)
+            elif self.playing_preview:
+                self.nowbar.current_time = self.duration
+                self._stop_preview()
 
     def on_exit(self):
         Window.unbind(on_key_down=self._on_keyboard_down)
 
         self._remove_button_widgets()
         self._stop_continuous_octave_shift()
-        self.loop_engine.pause()
+        self._destroy_nowbar()
+        self._stop_preview()
 
         if self._adding_note and self._new_note:
             self.piano.remove_note(self._new_note)
@@ -379,10 +403,44 @@ class LoopPlacementScreen(Screen):
 
     def _on_barn_press(self, *_):
         self.switch_to("garden")
+        
+    def _start_preview(self, start_time=0.0):
+        self._ensure_nowbar()
+        self.loop_engine.play(start_time, animal_id=self.animal_id)
+        self.sample_button.source = self.pause_icon_path
+        self.playing_preview = True
+        
+    def _ensure_nowbar(self):
+        if self.nowbar is None:
+            self.nowbar = NowBar(
+                duration=self.duration,
+                start_x=self.grid.x,
+                end_x=self.grid.x + self.grid.width,
+                bottom_y=self.grid.y,
+                top_y=self.grid.y + self.grid.height,
+            )
+            print("Nowbar variables: ", self.nowbar.duration, self.nowbar.start_x, self.nowbar.end_x,)
+            self.canvas.after.add(self.nowbar)
+
+    def _destroy_nowbar(self):
+        if self.nowbar:
+            self.canvas.after.remove(self.nowbar)
+            self.nowbar = None
+            self.playing_preview = False
 
     def _on_sample_press(self, *_):
-        self.loop_engine.pause()
-        self.loop_engine.play(animal_id=self.animal_id)
+        if self.loop_engine.is_playing():
+            self.loop_engine.pause()
+            self._stop_preview()
+        else:
+            start_time = 0.0
+            if self.nowbar:
+                if self.nowbar.current_time < self.duration:
+                    start_time = self.nowbar.current_time
+                else:
+                    self.nowbar.reset()
+
+            self._start_preview(start_time)
 
     def _on_volume_up_press(self, *_):
         """Increase volume of this animal's loop"""
@@ -461,8 +519,9 @@ class LoopPlacementScreen(Screen):
         """Perform a single octave shift"""
         self.loop_engine.shift_animal_octave(self.animal_id, self._octave_shift_direction)
         self._rebuild_piano_from_engine()
-        self.loop_engine.pause()
-        self.loop_engine.play(animal_id=self.animal_id)
+        self._stop_preview()
+        self._destroy_nowbar()
+        self._start_preview()
 
     def _on_add_press(self, *_):
         if self._adding_note:
@@ -635,6 +694,9 @@ class LoopPlacementScreen(Screen):
         if not self._drag_note:
             return super().on_touch_move(touch)
 
+        self._destroy_nowbar()
+        self._stop_preview()
+        
         off_x, off_y = self._drag_offset
 
         # Desired top-left in window coords

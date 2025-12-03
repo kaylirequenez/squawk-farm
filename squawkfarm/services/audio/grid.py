@@ -101,6 +101,9 @@ class Grid:
 
     def tick_to_time(self, tick):
         return self.tempo_map.tick_to_time(tick)
+    
+    def tick_to_frame(self, tick):
+        return time_to_frame(self.tick_to_time(tick))
 
     def time_to_tick(self, time_sec):
         return self.tempo_map.time_to_tick(time_sec)

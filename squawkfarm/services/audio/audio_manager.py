@@ -68,6 +68,15 @@ class AudioManager:
         self.current_cycle = 0
               
         self._schedule_cycle(start_time, repeat, animal_id)
+        
+        if not repeat:
+            total_ticks = self.grid.slot_to_tick(self.grid.get_total_slots())
+            end_tick = total_ticks - self.grid.time_to_tick(start_time) + self.scheduler.get_tick()
+            
+            self.scheduler.post_at_tick(
+                self.pause,
+                end_tick,
+            )
 
     def pause(self, _=None):
         self.scheduler.commands.clear()
@@ -109,14 +118,12 @@ class AudioManager:
                 frame_offset = 0
 
                 if tick >= tick_offset:
-                    frame_offset = 0
+                    pass
                 else:
                     end_tick = tick + self.grid.slot_to_tick(num_slots)
                     if end_tick > tick_offset:
                         local_tick_offset = tick_offset - tick
-                        frame_offset = self.grid.tick_to_frame(
-                            self.grid.tick_to_time(local_tick_offset)
-                        )
+                        frame_offset = self.grid.tick_to_frame(local_tick_offset)
                         tick += local_tick_offset
                     else:
                         continue
@@ -125,21 +132,19 @@ class AudioManager:
 
                 self.scheduler.post_at_tick(
                     self._start_section_playback,
-                    tick + now,
+                    tick - tick_offset + now,
                     (animal_id, start_slot, frame_offset, transpose_semitones, chord_quality),
                 )
 
-        def callback(_dt):
-            if repeat and self.playing:
+        if repeat:
+            def callback(_):
                 self.current_cycle += 1
                 self._schedule_cycle(0.0, repeat, filter_animal_id)
-            else:
-                self.pause()
 
-        self.scheduler.post_at_tick(
-            callback,
-            loop_ticks - tick_offset + now,
-        )
+            self.scheduler.post_at_tick(
+                callback,
+                loop_ticks - tick_offset + now,
+            )
 
     def _start_section_playback(self, _, args):
         animal_id, start_slot, frame_offset, transpose_semitones, chord_quality = args

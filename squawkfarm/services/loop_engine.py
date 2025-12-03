@@ -251,7 +251,6 @@ class LoopEngine:
         self.rhythm_candidate_index = 0
 
     def slide_instance(self, animal_id, old_start_slot, new_start_slot, overlap=False):
-        self.pause()
         return self.loops[animal_id].slide(old_start_slot, new_start_slot, self.grid.frame_to_slot, overlap)
 
     def set_loop_volume(self, animal_id, volume):
@@ -287,7 +286,6 @@ class LoopEngine:
         if self.audio_manager.is_playing():
             self.audio_manager.pause()
         else:
-            print("playing")
             print(self.audio_manager.mixer.gain)
             self.play_recording_preview(offset, repeat)
 
