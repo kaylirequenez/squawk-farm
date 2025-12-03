@@ -1,4 +1,6 @@
 import random
+import shutil
+import os
 from imslib.screen import Screen
 from kivy.core.window import Window
 from kivy.graphics import Rectangle
@@ -65,6 +67,24 @@ class GardenScreen(Screen):
             )
         self.barn_button.bind(on_press=self.on_barn_press)
         self.add_widget(self.barn_button)
+
+        # Trash button in bottom left corner (same size as barn)
+        self.trash_path = get_ui_asset_path("trash.png")
+        self.trash_texture = Image(source=self.trash_path).texture
+        self.trash_btn = Button(
+            size_hint=(None, None),
+            size=(self.b_size, self.b_size),
+            pos=(0, 0),
+            background_normal="",
+            background_color=(1, 1, 1, 0),
+        )
+        with self.trash_btn.canvas.before:
+            self.trash_rect = Rectangle(
+                pos=self.trash_btn.pos,
+                size=self.trash_btn.size,
+                texture=self.trash_texture,
+            )
+        self.add_widget(self.trash_btn)
 
         self.chords_path = get_ui_asset_path("chords.png")
         self.chords_texture = Image(source=self.chords_path).texture
@@ -133,7 +153,11 @@ class GardenScreen(Screen):
         if animal is None:
             return
 
-        widget = AnimalWidget(animal, on_click_callback=self._on_animal_click)
+        widget = AnimalWidget(
+            animal,
+            on_click_callback=self._on_animal_click,
+            on_drag_end_callback=self._on_animal_drag_end,
+        )
 
         egg_center_x = egg_x + egg_w / 2
         egg_center_y = egg_y + egg_h / 2
@@ -240,6 +264,11 @@ class GardenScreen(Screen):
         self.barn_rect.size = new_size
         self.barn_button.pos = new_pos
         self.barn_rect.pos = new_pos
+        # Resize trash button (same size as barn, bottom left)
+        self.trash_btn.size = new_size
+        self.trash_rect.size = new_size
+        self.trash_btn.pos = (0, 0)
+        self.trash_rect.pos = (0, 0)
         self.chord_btn_size = Window.width / 10
         self.chord_btn.size = (self.chord_btn_size, self.chord_btn_size)
         self.chord_btn.pos = (Window.width - self.chord_btn_size - 10, Window.height - self.chord_btn_size - 10)
@@ -275,3 +304,47 @@ class GardenScreen(Screen):
         animal = self.animals.get(animal_id)
         if animal:
             self.switch_to("loop_placement", animal_id)
+
+    def _on_animal_drag_end(self, animal_id, center_x, center_y):
+        """Check if animal was dragged into trash zone and delete if so."""
+        # Get trash button bounds
+        trash_x, trash_y = self.trash_btn.pos
+        trash_w, trash_h = self.trash_btn.size
+        
+        # Check if the animal center is within the trash zone
+        if (trash_x <= center_x <= trash_x + trash_w and
+            trash_y <= center_y <= trash_y + trash_h):
+            self.delete_animal(animal_id)
+
+    def delete_animal(self, animal_id):
+        """Permanently delete an animal and all its associated data."""
+        # Remove the widget from screen
+        widget = self.animal_widgets.pop(animal_id, None)
+        if widget:
+            # Remove shadow and click button
+            if widget.shadow_image and widget.shadow_image.parent:
+                widget.shadow_image.parent.remove_widget(widget.shadow_image)
+            if widget.click_button and widget.click_button.parent:
+                widget.click_button.parent.remove_widget(widget.click_button)
+            self.remove_widget(widget)
+
+        # Remove from animals dict
+        animal = self.animals.pop(animal_id, None)
+
+        # Delete the loop from loop engine
+        if animal_id in self.loop_engine.loops:
+            self.loop_engine.delete_animal_loop(animal_id)
+
+        # Delete the animal data folder from disk
+        animal_data_path = os.path.join("data", "animals", animal_id)
+        if os.path.exists(animal_data_path):
+            shutil.rmtree(animal_data_path)
+            print(f"[GardenScreen] Deleted animal data: {animal_data_path}")
+
+        # Also delete the recording if it exists
+        if animal and animal.recording_path and os.path.exists(animal.recording_path):
+            os.remove(animal.recording_path)
+            print(f"[GardenScreen] Deleted recording: {animal.recording_path}")
+
+        self.num_animals = len(self.animal_widgets)
+        print(f"[GardenScreen] Animal {animal_id} permanently deleted")

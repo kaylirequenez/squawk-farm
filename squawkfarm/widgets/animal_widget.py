@@ -10,9 +10,10 @@ TERRAIN_BOUNDARY_RATIO = 0.363
 
 
 class AnimalWidget(Image):
-    def __init__(self, animal, on_click_callback=None, **kwargs):
+    def __init__(self, animal, on_click_callback=None, on_drag_end_callback=None, **kwargs):
         self.animal = animal
         self.on_click_callback = on_click_callback
+        self.on_drag_end_callback = on_drag_end_callback
 
         self.sprite_paths = self._derive_sprite_paths(animal.image_path)
         self.shadow_paths = self._derive_shadow_paths(animal.image_path)
@@ -257,7 +258,10 @@ class AnimalWidget(Image):
             if self.on_click_callback:
                 self.on_click_callback(self.animal.animal_id)
         else:
-            # After drag, reset wander pause so animal doesn't immediately walk away
+            # After drag, notify the callback with final position
+            if self.on_drag_end_callback:
+                self.on_drag_end_callback(self.animal.animal_id, self._center_x, self._center_y)
+            # Reset wander pause so animal doesn't immediately walk away
             self._wander_pause_remaining = random.uniform(2.0, 5.0)
         
         return True
