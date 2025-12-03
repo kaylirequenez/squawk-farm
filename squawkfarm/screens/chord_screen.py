@@ -107,6 +107,7 @@ class ChordScreen(Screen):
         self.slot_labels = []
 
         self.dragging_note = None
+        self.dragging_quality = None
         self.drag_label = None
 
         self.barn_path = get_ui_asset_path("barn.png")
@@ -131,8 +132,11 @@ class ChordScreen(Screen):
         self.quality_buttons = {}
 
     def _create_note_buttons(self):
-        btn_size = 140
+        margin = 40
         spacing = 16
+        available_width = Window.width - margin
+        btn_size = min(140, (available_width - (len(NOTE_NAMES) - 1) * spacing) / len(NOTE_NAMES))
+        btn_size = max(btn_size, 30)
         total_width = len(NOTE_NAMES) * btn_size + (len(NOTE_NAMES) - 1) * spacing
         start_x = (Window.width - total_width) / 2
         y = Window.height - 160
@@ -156,14 +160,16 @@ class ChordScreen(Screen):
             self.add_widget(btn)
 
     def _create_quality_buttons(self):
-        btn_width = 160
-        btn_height = 100
+        margin = 40
         spacing = 30
-        y = Window.height - 300
-
         qualities = [("maj", "maj"), ("min", "min"), ("7", "7")]
+        available_width = Window.width - margin
+        btn_width = min(160, (available_width - (len(qualities) - 1) * spacing) / len(qualities))
+        btn_width = max(btn_width, 60)
+        btn_height = btn_width * 0.625
         total_width = len(qualities) * btn_width + (len(qualities) - 1) * spacing
         start_x = (Window.width - total_width) / 2
+        y = Window.height - 300
 
         for i, (key, text) in enumerate(qualities):
             btn = ShadowButton(
@@ -179,19 +185,23 @@ class ChordScreen(Screen):
                 font_size=44,
             )
             btn.quality_key = key
-            btn.bind(on_press=self._on_quality_press)
+            btn.bind(on_touch_down=self._on_quality_touch_down)
             self.quality_buttons[key] = btn
             self.add_widget(btn)
 
     def _create_slots(self):
-        slot_width = 240
-        slot_height = 200
+        margin = 40
         spacing = 40
-        total_width = 4 * slot_width + 3 * spacing
+        num_slots = 4
+        available_width = Window.width - margin
+        slot_width = min(240, (available_width - (num_slots - 1) * spacing) / num_slots)
+        slot_width = max(slot_width, 80)
+        slot_height = slot_width * 0.833
+        total_width = num_slots * slot_width + (num_slots - 1) * spacing
         start_x = (Window.width - total_width) / 2
         y = Window.height / 2 - slot_height / 2
 
-        for i in range(4):
+        for i in range(num_slots):
             slot = ChordSlot(i)
             slot.size = (slot_width, slot_height)
             slot.pos = (start_x + i * (slot_width + spacing), y)
@@ -282,41 +292,52 @@ class ChordScreen(Screen):
         if hasattr(self, 'bg_rect'):
             self.bg_rect.size = Window.size
 
-        btn_size = 140
+        margin = 40
         spacing = 16
+        available_width = Window.width - margin
+        btn_size = min(140, (available_width - (len(NOTE_NAMES) - 1) * spacing) / len(NOTE_NAMES))
+        btn_size = max(btn_size, 30)
         total_width = len(NOTE_NAMES) * btn_size + (len(NOTE_NAMES) - 1) * spacing
         start_x = (Window.width - total_width) / 2
         y = Window.height - 160
 
         for i, btn in enumerate(self.note_buttons):
+            btn.size = (btn_size, btn_size)
             btn.pos = (start_x + i * (btn_size + spacing), y)
 
-        btn_width = 160
-        btn_height = 100
         spacing = 30
-        y = Window.height - 300
-
         qualities = [("maj", "maj"), ("min", "min"), ("7", "7")]
+        available_width = Window.width - margin
+        btn_width = min(160, (available_width - (len(qualities) - 1) * spacing) / len(qualities))
+        btn_width = max(btn_width, 60)
+        btn_height = btn_width * 0.625
         total_width = len(qualities) * btn_width + (len(qualities) - 1) * spacing
         start_x = (Window.width - total_width) / 2
+        y = Window.height - 300
 
         for i, (key, _) in enumerate(qualities):
             if key in self.quality_buttons:
+                self.quality_buttons[key].size = (btn_width, btn_height)
                 self.quality_buttons[key].pos = (start_x + i * (btn_width + spacing), y)
 
-        slot_width = 240
-        slot_height = 200
         spacing = 40
-        total_width = 4 * slot_width + 3 * spacing
+        num_slots = 4
+        available_width = Window.width - margin
+        slot_width = min(240, (available_width - (num_slots - 1) * spacing) / num_slots)
+        slot_width = max(slot_width, 80)
+        slot_height = slot_width * 0.833
+        total_width = num_slots * slot_width + (num_slots - 1) * spacing
         start_x = (Window.width - total_width) / 2
         y = Window.height / 2 - slot_height / 2
 
         for i, slot in enumerate(self.slots):
+            slot.size = (slot_width, slot_height)
             slot.pos = (start_x + i * (slot_width + spacing), y)
             slot._draw()
 
             if i < len(self.slot_labels):
                 label = self.slot_labels[i]
+                label.size = (slot_width, 60)
                 label.pos = (slot.pos[0], slot.pos[1] + slot_height / 2 - 30)
 
     def _on_barn_press(self, *_):
@@ -358,21 +379,28 @@ class ChordScreen(Screen):
         touch.grab(self)
         return True
 
-    def _on_quality_press(self, btn):
-        if not self.selected_slot:
-            return
+    def _on_quality_touch_down(self, btn, touch):
+        if not btn.collide_point(*touch.pos):
+            return False
 
-        key = btn.quality_key
-        if key == "7":
-            self.selected_slot.toggle_7()
-        else:
-            self.selected_slot.set_quality(key)
-
-        self._update_slot_labels()
+        self.dragging_quality = btn.quality_key
+        self.drag_label = Label(
+            text=btn.text,
+            markup=True,
+            size_hint=(None, None),
+            size=(80, 60),
+            pos=(touch.x - 40, touch.y - 30),
+            color=(1, 0.4, 0.7, 1),
+            font_size=32,
+        )
+        self.add_widget(self.drag_label)
+        touch.grab(self)
+        return True
 
     def on_touch_move(self, touch):
         if touch.grab_current is self and self.drag_label:
-            self.drag_label.pos = (touch.x - 30, touch.y - 30)
+            offset = 40 if self.dragging_quality else 30
+            self.drag_label.pos = (touch.x - offset, touch.y - 30)
             return True
         return super().on_touch_move(touch)
 
@@ -380,17 +408,25 @@ class ChordScreen(Screen):
         if touch.grab_current is self:
             touch.ungrab(self)
 
-            if self.drag_label and self.dragging_note:
+            if self.drag_label:
                 for slot in self.slots:
                     if slot.collide_point(touch.x, touch.y):
-                        slot.set_note(self.dragging_note)
-                        self._select_slot(slot)
+                        if self.dragging_note:
+                            slot.set_note(self.dragging_note)
+                            self._select_slot(slot)
+                        elif self.dragging_quality:
+                            key = self.dragging_quality
+                            if key == "7":
+                                slot.toggle_7()
+                            else:
+                                slot.set_quality(key)
                         self._update_slot_labels()
                         break
 
                 self.remove_widget(self.drag_label)
                 self.drag_label = None
                 self.dragging_note = None
+                self.dragging_quality = None
             return True
 
         for slot in self.slots:
