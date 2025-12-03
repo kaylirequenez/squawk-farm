@@ -434,6 +434,10 @@ class AnimalWidget(Image):
         self._wander_move_count += 1
 
     def update_wander(self, dt, bounds, others=None):
+        # Don't update wander while being dragged
+        if self._is_dragging or self._drag_touch is not None:
+            return
+
         if others is None:
             others = []
         width, height = bounds
