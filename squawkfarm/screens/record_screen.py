@@ -197,11 +197,11 @@ class RecordScreen(Screen):
 
         # Volume buttons (same style as octave buttons in loop_placement_screen)
         self.volume_btn_size = Window.width / 12
-        self.up_icon_path = get_ui_asset_path("up.png")
-        self.down_icon_path = get_ui_asset_path("down.png")
-        
+        self.plus_icon_path = get_ui_asset_path("plus.png")
+        self.minus_icon_path = get_ui_asset_path("minus.png")
+
         self.volume_up_button = ImageButton(
-            source=self.up_icon_path,
+            source=self.plus_icon_path,
             size_hint=(None, None),
             size=(self.volume_btn_size, self.volume_btn_size),
             pos=(Window.width / 2 + 10, Window.height - self.volume_btn_size - 10),
@@ -209,9 +209,9 @@ class RecordScreen(Screen):
             disabled=True,
         )
         self.volume_up_button.bind(on_press=self._on_volume_up_press)
-        
+
         self.volume_down_button = ImageButton(
-            source=self.down_icon_path,
+            source=self.minus_icon_path,
             size_hint=(None, None),
             size=(self.volume_btn_size, self.volume_btn_size),
             pos=(Window.width / 2 - self.volume_btn_size - 10, Window.height - self.volume_btn_size - 10),
@@ -812,7 +812,7 @@ class RecordScreen(Screen):
         out_dir = get_animal_data_dir(self.animal_id)
         out_path = os.path.join(out_dir, "open.png")
 
-        render_creature_image(
+        _, _, creature_size = render_creature_image(
             wav_path,
             out_dir,
             size=(640, 480),
@@ -823,7 +823,7 @@ class RecordScreen(Screen):
             image_path=out_path,
             recording_path=wav_path,
             pos=(50, 50),
-            size=(100, 100),
+            size=creature_size,
         )
 
         garden = next((s for s in self.manager.screens if s.name == "garden"), None)

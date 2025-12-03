@@ -149,17 +149,20 @@ class LoopPlacementScreen(Screen):
         )
         self.octave_down_button.bind(on_touch_down=self._on_octave_down_touch_down, on_touch_up=self._on_octave_down_touch_up)
 
-        # Volume control buttons (at 1/4 screen width, same size as octave buttons)
         self.volume_btn_size = 100
+        self.plus_icon_path = get_ui_asset_path("plus.png")
+        self.minus_icon_path = get_ui_asset_path("minus.png")
+
         self.volume_label = Label(
             text="",
             size_hint=(None, None),
             size=(100, 50),
             pos=(Window.width / 4 - 50, Window.height - 60),
             color=(0.4, 0.7, 1, 1),
+            opacity=0,
         )
         self.volume_up_button = ImageButton(
-            source=self.up_icon_path,
+            source=self.plus_icon_path,
             size_hint=(None, None),
             size=(self.volume_btn_size, self.volume_btn_size),
             pos=(Window.width / 4 + 10, Window.height - self.volume_btn_size - 10),
@@ -167,7 +170,7 @@ class LoopPlacementScreen(Screen):
         self.volume_up_button.bind(on_press=self._on_volume_up_press)
 
         self.volume_down_button = ImageButton(
-            source=self.down_icon_path,
+            source=self.minus_icon_path,
             size_hint=(None, None),
             size=(self.volume_btn_size, self.volume_btn_size),
             pos=(Window.width / 4 - self.volume_btn_size - 10, Window.height - self.volume_btn_size - 10),
