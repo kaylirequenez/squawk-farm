@@ -297,14 +297,9 @@ class LoopEngine:
         if self.recording is not None:
             return self.recording.get_volume()
         return 0.5  # Default volume
-
-    def adjust_recording_volume(self, delta):
-        """Adjust recording volume by delta (e.g., +0.1 or -0.1)"""
-        if self.recording is not None:
-            new_volume = self.recording.get_volume() + delta
-            self.recording.set_volume(new_volume)
-            return self.recording.get_volume()
-        return 0.5
+    
+    def get_loop_volume(self, animal_id):
+        return self.loops[animal_id].volume
     
     def set_volume(self, volume):
         self.audio_manager.set_volume(volume)

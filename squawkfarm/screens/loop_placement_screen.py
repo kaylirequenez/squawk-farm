@@ -2,7 +2,7 @@ import os
 
 from kivy.uix.button import Button
 from kivy.uix.behaviors import ButtonBehavior
-from kivy.uix.widget import Widget
+from kivy.uix.slider import Slider
 from kivy.uix.image import Image
 from kivy.uix.label import Label
 from kivy.core.window import Window
@@ -112,6 +112,20 @@ class LoopPlacementScreen(Screen):
                 size=self.trash_btn.size,
                 texture=self.trash_texture,
             )
+            
+        self.add_button = ShadowButton(
+            text="[b]Add[/b]",
+            markup=True,
+            size_hint=(None, None),
+            size=(120, 80),
+            pos=(self.trash_btn.width + 20, 10),
+            background_normal='',
+            background_down='',
+            background_color=(1, 0.75, 0.85, 1),
+            color=(0.05, 0.05, 0.3, 1),
+            font_size=18,
+        )
+        self.add_button.bind(on_press=self._on_add_press)
 
         self.play_icon_path = get_ui_asset_path("play.png")
         self.pause_icon_path = get_ui_asset_path("pause.png")
@@ -140,7 +154,7 @@ class LoopPlacementScreen(Screen):
             source=self.up_icon_path,
             size_hint=(None, None),
             size=(self.octave_btn_size, self.octave_btn_size),
-            pos=(Window.width - 110, Window.height - self.octave_btn_size - 10),
+            pos=(20 + self.octave_btn_size + 10, Window.height - self.octave_btn_size - 10),
         )
         self.octave_up_button.bind(on_touch_down=self._on_octave_up_touch_down, on_touch_up=self._on_octave_up_touch_up)
 
@@ -148,7 +162,7 @@ class LoopPlacementScreen(Screen):
             source=self.down_icon_path,
             size_hint=(None, None),
             size=(self.octave_btn_size, self.octave_btn_size),
-            pos=(Window.width - 220, Window.height - self.octave_btn_size - 10),
+            pos=(20, Window.height - self.octave_btn_size - 10),
         )
         self.octave_down_button.bind(on_touch_down=self._on_octave_down_touch_down, on_touch_up=self._on_octave_down_touch_up)
 
@@ -156,65 +170,23 @@ class LoopPlacementScreen(Screen):
         self.plus_icon_path = get_ui_asset_path("plus.png")
         self.minus_icon_path = get_ui_asset_path("minus.png")
 
-        self.volume_label = Label(
-            text="",
+        self.volume_slider = Slider(
+            min=0.0,
+            max=1.0,
+            value=1.0,      # will be synced in _update_volume_label
+            step=0.1,
             size_hint=(None, None),
-            size=(100, 50),
-            pos=(Window.width / 4 - 50, Window.height - 60),
-            color=(0.4, 0.7, 1, 1),
-            opacity=0,
+            size=(40, Window.height * 0.25),  # temporary; real size set in _position_volume_slider_to_grid
+            pos=(Window.width - 60, self.grid_y_margin),
+            orientation='vertical',
+            value_track=True,
+            value_track_color=(1, 0.4, 0.7, 1),  # pink track
         )
-        self.volume_up_button = ImageButton(
-            source=self.plus_icon_path,
-            size_hint=(None, None),
-            size=(self.volume_btn_size, self.volume_btn_size),
-            pos=(Window.width / 4 + 10, Window.height - self.volume_btn_size - 10),
-        )
-        self.volume_up_button.bind(on_press=self._on_volume_up_press)
-
-        self.volume_down_button = ImageButton(
-            source=self.minus_icon_path,
-            size_hint=(None, None),
-            size=(self.volume_btn_size, self.volume_btn_size),
-            pos=(Window.width / 4 - self.volume_btn_size - 10, Window.height - self.volume_btn_size - 10),
-        )
-        self.volume_down_button.bind(on_press=self._on_volume_down_press)
-
-        self.add_button = ShadowButton(
-            text="[b]Add[/b]",
-            markup=True,
-            size_hint=(None, None),
-            size=(120, 80),
-            pos=(20, Window.height - 90),
-            background_normal='',
-            background_down='',
-            background_color=(1, 0.75, 0.85, 1),
-            color=(0.05, 0.05, 0.3, 1),
-            font_size=18,
-        )
-        self.add_button.bind(on_press=self._on_add_press)
-
-        self.delete_button = ShadowButton(
-            text="[b]Delete[/b]",
-            markup=True,
-            size_hint=(None, None),
-            size=(120, 80),
-            pos=(150, Window.height - 90),
-            background_normal='',
-            background_down='',
-            background_color=(1, 0.75, 0.85, 1),
-            color=(0.05, 0.05, 0.3, 1),
-            font_size=18,
-        )
-        self.delete_button.bind(on_press=self._on_delete_press)
+        self.volume_slider.bind(value=self._on_volume_slider_change)
+        self.volume_slider.bind(value=self._on_volume_slider_change)
 
         self._adding_note = False
         self._new_note = None
-
-        self._hammer_active = False
-        self._hammer_widget = None
-        self._dragging_hammer = False
-        self._hammer_offset = (0.0, 0.0)
         
         # Octave shifting state
         self._octave_shift_active = False
@@ -244,11 +216,8 @@ class LoopPlacementScreen(Screen):
         self.add_widget(self.octave_label)
         self.add_widget(self.octave_up_button)
         self.add_widget(self.octave_down_button)
-        self.add_widget(self.volume_label)
-        self.add_widget(self.volume_up_button)
-        self.add_widget(self.volume_down_button)
+        self.add_widget(self.volume_slider)
         self.add_widget(self.add_button)
-        self.add_widget(self.delete_button)
         self.add_widget(self.barn_btn)
         self.add_widget(self.trash_btn)
         self.add_widget(self.toggle_sequence_btn)
@@ -258,11 +227,8 @@ class LoopPlacementScreen(Screen):
         self.remove_widget(self.octave_label)
         self.remove_widget(self.octave_up_button)
         self.remove_widget(self.octave_down_button)
-        self.remove_widget(self.volume_label)
-        self.remove_widget(self.volume_up_button)
-        self.remove_widget(self.volume_down_button)
+        self.remove_widget(self.volume_slider)
         self.remove_widget(self.add_button)
-        self.remove_widget(self.delete_button)
         self.remove_widget(self.barn_btn)
         self.remove_widget(self.trash_btn)
         self.remove_widget(self.toggle_sequence_btn)
@@ -275,8 +241,6 @@ class LoopPlacementScreen(Screen):
         self.animal_id = animal_id
         self.canvas.before.clear()
         self.canvas.clear()
-
-        Window.bind(on_key_down=self._on_keyboard_down)
 
         with self.canvas.before:
             Color(1, 1, 1, 1)
@@ -295,6 +259,10 @@ class LoopPlacementScreen(Screen):
             skip_outer_lines=True,
         )
         self.canvas.before.add(self.grid)
+        self._position_volume_slider_to_grid()
+        
+        self.add_button.size = (self.grid.y, self.grid.y / 2)
+        self.add_button.pos = (self.trash_btn.width + 20, self.grid.y / 2 - self.grid.y / 4)
         
         self.duration = self.loop_engine.slot_to_time(self.loop_engine.get_total_slots())
 
@@ -319,22 +287,18 @@ class LoopPlacementScreen(Screen):
         self.sample_button.size = (self.sample_btn_size, self.sample_btn_size)
         self.sample_button.pos = (Window.width / 2 - self.sample_btn_size / 2, Window.height - self.sample_btn_size - 10)
         
-        self.octave_btn_size = 100
         self.octave_up_button.size = (self.octave_btn_size, self.octave_btn_size)
-        self.octave_up_button.pos = (Window.width - 110, Window.height - self.octave_btn_size - 10)
+        self.octave_up_button.pos = (
+            20 + self.octave_btn_size + 10,
+            Window.height - self.octave_btn_size - 10,
+        )
         self.octave_down_button.size = (self.octave_btn_size, self.octave_btn_size)
-        self.octave_down_button.pos = (Window.width - 220, Window.height - self.octave_btn_size - 10)
-        self.octave_label.pos = (Window.width - 340, Window.height - 60)
+        self.octave_down_button.pos = (
+            20,
+            Window.height - self.octave_btn_size - 10,
+        )
+        self.octave_label.pos = (20, Window.height - 60)
         
-        self.volume_btn_size = 100
-        self.volume_up_button.size = (self.volume_btn_size, self.volume_btn_size)
-        self.volume_up_button.pos = (Window.width / 4 + 10, Window.height - self.volume_btn_size - 10)
-        self.volume_down_button.size = (self.volume_btn_size, self.volume_btn_size)
-        self.volume_down_button.pos = (Window.width / 4 - self.volume_btn_size - 10, Window.height - self.volume_btn_size - 10)
-        self.volume_label.pos = (Window.width / 4 - 50, Window.height - 60)
-        
-        self.add_button.pos = (20, Window.height - 90)
-        self.delete_button.pos = (150, Window.height - 90)
         self.barn_btn.size = (Window.width / 8, Window.width / 8)
         self.barn_btn.pos = (Window.width - self.barn_btn.width, 0)
         self.barn_rect.size = self.barn_btn.size
@@ -350,6 +314,15 @@ class LoopPlacementScreen(Screen):
             self.grid.y_margin = Window.height * 0.15
             self.grid.on_resize(winsize)
             self._rebuild_piano_from_engine()
+            self._position_volume_slider_to_grid()
+            
+            self.add_button.size = (self.grid.y, self.grid.y / 2)
+            self.add_button.pos = (self.trash_btn.width + 20, self.grid.y / 2 - self.grid.y / 4)
+            
+            self.toggle_sequence_btn.pos = (
+                Window.width / 2 - self.toggle_sequence_btn.width / 2,
+                self.grid.y / 2 - self.grid.y / 4,
+            )
 
         self.piano.size = Window.size
         self.piano.pos = (0, 0)
@@ -374,8 +347,6 @@ class LoopPlacementScreen(Screen):
                 self._stop_preview()
 
     def on_exit(self):
-        Window.unbind(on_key_down=self._on_keyboard_down)
-
         self._remove_button_widgets()
         self._stop_continuous_octave_shift()
         self._destroy_nowbar()
@@ -385,21 +356,6 @@ class LoopPlacementScreen(Screen):
             self.piano.remove_note(self._new_note)
             self._adding_note = False
             self._new_note = None
-
-        if self._hammer_active and self._hammer_widget:
-            self.remove_widget(self._hammer_widget)
-            self._hammer_active = False
-            self._hammer_widget = None
-
-    def _on_keyboard_down(self, _window, key, *_args):
-        if key == 27:
-            if self._hammer_active and self._hammer_widget:
-                self.remove_widget(self._hammer_widget)
-                self._hammer_active = False
-                self._hammer_widget = None
-                self._dragging_hammer = False
-                return True
-        return False
 
     def _on_barn_press(self, *_):
         self.switch_to("garden")
@@ -441,30 +397,34 @@ class LoopPlacementScreen(Screen):
                     self.nowbar.reset()
 
             self._start_preview(start_time)
-
-    def _on_volume_up_press(self, *_):
-        """Increase volume of this animal's loop"""
-        loop = self.loop_engine.loops.get(self.animal_id)
-        if loop:
-            new_vol = min(1.0, loop.volume + 0.1)
-            loop.set_volume(new_vol)
-            self._update_volume_label()
-
-    def _on_volume_down_press(self, *_):
-        """Decrease volume of this animal's loop"""
-        loop = self.loop_engine.loops.get(self.animal_id)
-        if loop:
-            new_vol = max(0.0, loop.volume - 0.1)
-            loop.set_volume(new_vol)
-            self._update_volume_label()
-
+            
+    def _on_volume_slider_change(self, _, value):
+        self.loop_engine.set_loop_volume(self.animal_id, value)
+        
     def _update_volume_label(self):
-        """Update the volume label to show current volume"""
-        loop = self.loop_engine.loops.get(self.animal_id)
-        if loop:
-            self.volume_label.text = f"Vol: {loop.volume:.1f}"
-        else:
-            self.volume_label.text = ""
+        vol = self.loop_engine.get_loop_volume(self.animal_id)
+        if hasattr(self, "volume_slider"):
+            self.volume_slider.value = vol
+            
+    def _position_volume_slider_to_grid(self):
+        if not hasattr(self, "grid"):
+            return
+
+        slider_width = 40
+        margin = 20
+
+        # Height is the min of grid height and 1/4 of screen
+        target_height = min(self.grid.height, Window.height * 0.25)
+        self.volume_slider.size = (slider_width, target_height)
+
+        x = self.grid.x + self.grid.width + margin
+        max_x = Window.width - margin - slider_width
+        if x > max_x:
+            x = max_x
+        y = self.grid.y + self.grid.height - target_height
+
+        self.volume_slider.pos = (x, y)
+
 
     def _on_octave_up_touch_down(self, button, touch):
         if button.collide_point(*touch.pos):
@@ -551,37 +511,6 @@ class LoopPlacementScreen(Screen):
         self._new_note = note
         self.piano.set_selected(note)
 
-    def _on_delete_press(self, *_):
-        if self._hammer_active:
-            if self._hammer_widget:
-                self.remove_widget(self._hammer_widget)
-            self._hammer_active = False
-            self._hammer_widget = None
-            return
-
-        hammer_path = get_ui_asset_path("hammer.png")
-        if not os.path.exists(hammer_path):
-            return
-
-        hammer_tex = Image(source=hammer_path).texture
-        hammer_size = 120
-
-        hammer_widget = Widget()
-        hammer_widget.size_hint = (None, None)
-        hammer_widget.size = (hammer_size, hammer_size)
-
-        mouse_pos = Window.mouse_pos
-        hammer_widget.pos = (mouse_pos[0] - hammer_size / 2, mouse_pos[1] - hammer_size / 2)
-
-        with hammer_widget.canvas:
-            Color(1, 1, 1, 1)
-            hammer_widget.rect = Rectangle(pos=hammer_widget.pos, size=hammer_widget.size, texture=hammer_tex)
-
-        self._hammer_widget = hammer_widget
-        self.add_widget(self._hammer_widget)
-        self._hammer_active = True
-        self._dragging_hammer = True
-
     def row_to_midi(self, row: int, base_midi: int, key_mode: str) -> int:
         if key_mode == "major":
             intervals = [0, 2, 4, 5, 7, 9, 11]
@@ -645,29 +574,6 @@ class LoopPlacementScreen(Screen):
         if super().on_touch_down(touch):
             return True
 
-        if self._hammer_active and self._hammer_widget:
-            hx, hy = self._hammer_widget.pos
-            hw, hh = self._hammer_widget.size
-            hammer_center_x = hx + hw / 2
-            hammer_center_y = hy + hh / 2
-
-            for note in reversed(self.piano.notes):
-                nx, ny = note.pos
-                w, h = note.size
-                if nx <= hammer_center_x <= nx + w and ny <= hammer_center_y <= ny + h:
-                    if note.start_slot is not None:
-                        self.loop_engine.remove_loop_instance(self.animal_id, note.start_slot)
-
-                    self.piano.remove_note(note)
-
-                    if note == self._new_note:
-                        self._adding_note = False
-                        self._new_note = None
-
-                    self._rebuild_piano_from_engine()
-                    return True
-            return True
-
         for note in reversed(self.piano.notes):
             nx, ny = note.pos
             w, h = note.size
@@ -683,14 +589,6 @@ class LoopPlacementScreen(Screen):
 
 
     def on_touch_move(self, touch):
-        if self._hammer_active and self._hammer_widget:
-            hammer_size = self._hammer_widget.size[0]
-            new_x = touch.x - hammer_size / 2
-            new_y = touch.y - hammer_size / 2
-            self._hammer_widget.pos = (new_x, new_y)
-            self._hammer_widget.rect.pos = (new_x, new_y)
-            return True
-
         if not self._drag_note:
             return super().on_touch_move(touch)
 
@@ -715,9 +613,6 @@ class LoopPlacementScreen(Screen):
 
 
     def on_touch_up(self, touch):
-        if self._hammer_active:
-            return True
-
         if not self._drag_note:
             return super().on_touch_up(touch)
 

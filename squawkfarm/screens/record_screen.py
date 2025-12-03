@@ -5,6 +5,7 @@ import numpy as np
 from kivy.uix.button import Button
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.spinner import Spinner, SpinnerOption
+from kivy.uix.slider import Slider
 from kivy.uix.image import Image
 from kivy.core.window import Window
 from kivy.graphics import Color, Line, Rectangle
@@ -145,7 +146,7 @@ class RecordScreen(Screen):
             source=self.hatch_icon_path,
             size_hint=(None, None),
             size=(self.hatch_btn_size, self.hatch_btn_size),
-            pos=(Window.width - self.hatch_btn_size - 20, Window.height - self.hatch_btn_size - 20),
+            pos=(Window.width - self.grid_x_margin - self.hatch_btn_size, Window.height - self.hatch_btn_size - 20),
             disabled=True,
             opacity=0,
         )
@@ -195,30 +196,19 @@ class RecordScreen(Screen):
         )
         self.default_sounds_spinner.bind(text=self._on_default_sound_selected)
 
-        # Volume buttons (same style as octave buttons in loop_placement_screen)
-        self.volume_btn_size = Window.width / 12
-        self.plus_icon_path = get_ui_asset_path("plus.png")
-        self.minus_icon_path = get_ui_asset_path("minus.png")
-
-        self.volume_up_button = ImageButton(
-            source=self.plus_icon_path,
+        self.volume_slider = Slider(
+            min=0.0,
+            max=1.0,
+            value=1.0,      # will be synced in _update_volume_label
+            step=0.1,
             size_hint=(None, None),
-            size=(self.volume_btn_size, self.volume_btn_size),
-            pos=(Window.width / 2 + 10, Window.height - self.volume_btn_size - 10),
-            opacity=0,
-            disabled=True,
+            size=(40, Window.height * 0.25),  # temporary; real size set in _position_volume_slider_to_grid
+            pos=(Window.width - 60, self.grid_y_margin),
+            orientation='vertical',
+            value_track=True,
+            value_track_color=(1, 0.4, 0.7, 1),  # pink track
         )
-        self.volume_up_button.bind(on_press=self._on_volume_up_press)
-
-        self.volume_down_button = ImageButton(
-            source=self.minus_icon_path,
-            size_hint=(None, None),
-            size=(self.volume_btn_size, self.volume_btn_size),
-            pos=(Window.width / 2 - self.volume_btn_size - 10, Window.height - self.volume_btn_size - 10),
-            opacity=0,
-            disabled=True,
-        )
-        self.volume_down_button.bind(on_press=self._on_volume_down_press)
+        self.volume_slider.bind(value=self._on_volume_slider_change)
 
         self.max_display_points = 2000
         self.samples = []
@@ -252,10 +242,8 @@ class RecordScreen(Screen):
         self.play_btn.opacity = 1 if visible else 0
         self.sample_size_spinner.disabled = not visible
         self.sample_size_spinner.opacity = 1 if visible else 0
-        self.volume_up_button.disabled = not visible
-        self.volume_up_button.opacity = 1 if visible else 0
-        self.volume_down_button.disabled = not visible
-        self.volume_down_button.opacity = 1 if visible else 0
+        self.volume_slider.disabled = not visible
+        self.volume_slider.opacity = 1 if visible else 0
 
     def _add_button_widgets(self):
         self.add_widget(self.record_btn)
@@ -263,8 +251,7 @@ class RecordScreen(Screen):
         self.add_widget(self.add_loop_btn)
         self.add_widget(self.sample_size_spinner)
         self.add_widget(self.default_sounds_spinner)
-        self.add_widget(self.volume_up_button)
-        self.add_widget(self.volume_down_button)
+        self.add_widget(self.volume_slider)
         self.add_widget(self.barn_btn)
 
     def _remove_button_widgets(self):
@@ -273,8 +260,7 @@ class RecordScreen(Screen):
         self.remove_widget(self.add_loop_btn)
         self.remove_widget(self.sample_size_spinner)
         self.remove_widget(self.default_sounds_spinner)
-        self.remove_widget(self.volume_up_button)
-        self.remove_widget(self.volume_down_button)
+        self.remove_widget(self.volume_slider)
         self.remove_widget(self.barn_btn)
         
     def _clear_editing_buttons(self):
@@ -324,6 +310,8 @@ class RecordScreen(Screen):
             skip_outer_lines=True,
         )
         self.canvas.add(self.grid)
+        self._position_volume_slider_to_grid()
+        self._update_volume_label()
 
         grid_cy = self.grid.y + self.grid.height / 2
 
@@ -346,14 +334,7 @@ class RecordScreen(Screen):
                 width=3.5,
             )
 
-        self.add_widget(self.barn_btn)
-        self.add_widget(self.record_btn)
-        self.add_widget(self.play_btn)
-        self.add_widget(self.add_loop_btn)
-        self.add_widget(self.sample_size_spinner)
-        self.add_widget(self.default_sounds_spinner)
-        self.add_widget(self.volume_up_button)
-        self.add_widget(self.volume_down_button)
+        self._add_button_widgets()
 
     def on_resize(self, *args):
         if hasattr(self, 'bg_rect'):
@@ -374,17 +355,14 @@ class RecordScreen(Screen):
 
         self.hatch_btn_size = Window.width / 8
         self.add_loop_btn.size = (self.hatch_btn_size, self.hatch_btn_size)
-        self.add_loop_btn.pos = (Window.width - self.hatch_btn_size, Window.height - self.hatch_btn_size)
+        self.grid_x_margin = Window.width * 0.1
+        self.add_loop_btn.pos = (Window.width - self.grid_x_margin - self.hatch_btn_size, Window.height - self.hatch_btn_size)
 
         self.sample_size_spinner.pos = (20, Window.height - 80)
         self.default_sounds_spinner.pos = (20 + 160 + 20, Window.height - 80)
 
         # Update volume button positions and sizes (top middle, resizable)
         self.volume_btn_size = Window.width / 12
-        self.volume_up_button.size = (self.volume_btn_size, self.volume_btn_size)
-        self.volume_up_button.pos = (Window.width / 2 + 10, Window.height - self.volume_btn_size - 10)
-        self.volume_down_button.size = (self.volume_btn_size, self.volume_btn_size)
-        self.volume_down_button.pos = (Window.width / 2 - self.volume_btn_size - 10, Window.height - self.volume_btn_size - 10)
 
         if hasattr(self, 'grid'):
             # Store old grid dimensions and marker fractions before resize
@@ -436,8 +414,38 @@ class RecordScreen(Screen):
             elif len(self.samples) > 0:
                 self._update_wave()
                 
+            self._position_volume_slider_to_grid()
+                
             if self.nowbar:
                 self.nowbar.on_resize(self.left_marker_x, self.right_marker_x, self.grid.y, self.grid.y + self.grid.height)
+
+    def _on_volume_slider_change(self, _, value):
+        self.loop_engine.set_recording_volume(value)
+        
+    def _update_volume_label(self):
+        vol = self.loop_engine.get_recording_volume()
+        if hasattr(self, "volume_slider"):
+            self.volume_slider.value = 0.5
+            
+    def _position_volume_slider_to_grid(self):
+        if not hasattr(self, "grid"):
+            return
+
+        slider_width = 40
+        margin = 20
+
+        # Height is the min of grid height and 1/4 of screen
+        target_height = min(self.grid.height, Window.height * 0.25)
+        self.volume_slider.size = (slider_width, target_height)
+
+        x = self.grid.x + self.grid.width + margin
+        max_x = Window.width - margin - slider_width
+        if x > max_x:
+            x = max_x
+        y = self.grid.y + self.grid.height - target_height
+
+        self.volume_slider.pos = (x, y)
+
 
     def on_update(self):
         if self.writer.active and not self.default_sound:
@@ -532,12 +540,6 @@ class RecordScreen(Screen):
             print(f"Starting preview at {start_time:.2f} sec")
             print("Recording duration:", self.loop_engine.get_recording_duration())
             self._start_preview(start_time)
-
-    def _on_volume_up_press(self, *_):
-        self.loop_engine.adjust_recording_volume(0.1)
-
-    def _on_volume_down_press(self, *_):
-        self.loop_engine.adjust_recording_volume(-0.1)
         
     def _adjust_markers_for_sample_size_change(self):
         if not self.left_marker_x:
