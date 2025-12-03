@@ -41,6 +41,13 @@ class AnimalWidget(Image):
         self._center_x = 0.0
         self._center_y = 0.0
 
+        # Dragging state
+        self._is_dragging = False
+        self._drag_touch = None
+        self._drag_start_pos = None
+        self._drag_offset = (0, 0)
+        self._drag_threshold = 10  # pixels before drag starts
+
         kwargs.setdefault("size_hint", (None, None))
         super().__init__(**kwargs)
 
@@ -50,7 +57,11 @@ class AnimalWidget(Image):
             background_color=(0, 0, 0, 0),
             background_normal='',
         )
-        self.click_button.bind(on_press=self._on_click_button_press)
+        self.click_button.bind(
+            on_touch_down=self._on_touch_down,
+            on_touch_move=self._on_touch_move,
+            on_touch_up=self._on_touch_up,
+        )
         
         self.update_from_animal(animal)
 
@@ -159,9 +170,97 @@ class AnimalWidget(Image):
 
         self._last_parent = parent
     
-    def _on_click_button_press(self, instance):
-        if self.on_click_callback:
-            self.on_click_callback(self.animal.animal_id)
+    def _on_touch_down(self, button, touch):
+        if not button.collide_point(*touch.pos):
+            return False
+        
+        # Stop wandering when touched
+        self._wander_state = "idle"
+        self._wander_target = None
+        self._move_start_pos = None
+        
+        # Start tracking for potential drag
+        self._drag_touch = touch
+        self._drag_start_pos = (touch.x, touch.y)
+        # Store the offset from touch to animal center so we can maintain it during drag
+        self._drag_offset = (touch.x - self._center_x, touch.y - self._center_y)
+        self._is_dragging = False
+        touch.grab(button)
+        return True
+    
+    def _on_touch_move(self, button, touch):
+        if touch.grab_current != button:
+            return False
+        
+        if self._drag_touch != touch:
+            return False
+        
+        # Check if we've moved enough to start dragging
+        if self._drag_start_pos:
+            dx = abs(touch.x - self._drag_start_pos[0])
+            dy = abs(touch.y - self._drag_start_pos[1])
+            if dx > self._drag_threshold or dy > self._drag_threshold:
+                self._is_dragging = True
+        
+        if self._is_dragging:
+            # Calculate new center position from touch, accounting for the initial offset
+            off_x, off_y = self._drag_offset
+            new_center_x = touch.x - off_x
+            new_center_y = touch.y - off_y
+            
+            # Apply bounds constraints - get current window size dynamically for resize support
+            width, height = Window.size
+            
+            # Allow movement across full screen (x=0 to x=width, y=0 to terrain boundary)
+            min_center_x = 0
+            max_center_x = width
+            
+            # Y bounds: from very bottom of screen (y=0) to terrain boundary
+            max_center_y = height * TERRAIN_BOUNDARY_RATIO
+            min_center_y = 0
+            
+            # Clamp to bounds
+            new_center_x = max(min_center_x, min(new_center_x, max_center_x))
+            new_center_y = max(min_center_y, min(new_center_y, max_center_y))
+            
+            # Update position
+            self._center_x = new_center_x
+            self._center_y = new_center_y
+            new_x, new_y = self._update_shadow_pos(self._center_x, self._center_y)
+            self.pos = (new_x, new_y)
+            
+            # Update animal model position
+            ground_x = self._center_x - self._base_width / 2
+            ground_y = self._center_y - self._base_height / 2
+            self.animal.pos = (ground_x, ground_y)
+        
+        return True
+    
+    def _on_touch_up(self, button, touch):
+        if touch.grab_current != button:
+            return False
+        
+        touch.ungrab(button)
+        
+        if self._drag_touch != touch:
+            return False
+        
+        was_dragging = self._is_dragging
+        
+        # Reset drag state
+        self._drag_touch = None
+        self._drag_start_pos = None
+        self._is_dragging = False
+        
+        # If we weren't dragging, it's a click - trigger callback
+        if not was_dragging:
+            if self.on_click_callback:
+                self.on_click_callback(self.animal.animal_id)
+        else:
+            # After drag, reset wander pause so animal doesn't immediately walk away
+            self._wander_pause_remaining = random.uniform(2.0, 5.0)
+        
+        return True
     
     def move_to(self, pos):
         ground_x, ground_y = pos
