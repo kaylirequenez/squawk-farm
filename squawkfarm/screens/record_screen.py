@@ -471,10 +471,10 @@ class RecordScreen(Screen):
         self.loop_engine.toggle_play_recording_preview()
 
     def _on_volume_up_press(self, *_):
-        new_volume = self.loop_engine.adjust_recording_volume(0.1)
+        self.loop_engine.adjust_recording_volume(0.1)
 
     def _on_volume_down_press(self, *_):
-        new_volume = self.loop_engine.adjust_recording_volume(-0.1)
+        self.loop_engine.adjust_recording_volume(-0.1)
         
     def _adjust_markers_for_sample_size_change(self):
         if not self.left_marker_x:

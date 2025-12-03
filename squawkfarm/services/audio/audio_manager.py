@@ -18,6 +18,7 @@ class AudioManager:
 
         self.scheduler = AudioScheduler(self.grid.tempo_map)
         self.mixer = Mixer()
+        self.mixer.set_gain(0.75)
         self.scheduler.set_generator(self.mixer)
 
         self.audio = Audio(2)

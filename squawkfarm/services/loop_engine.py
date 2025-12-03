@@ -119,17 +119,13 @@ class LoopEngine:
 
     def set_recording(self, animal_id):
         audio_path = get_recording_wav_path(animal_id, "raw")
-        existing_volume = None
         if animal_id in self.loops:
             start_frame = self.loops[animal_id].start_frame
             num_frames = self.loops[animal_id].num_frames
-            existing_volume = self.loops[animal_id].volume
         else:
             start_frame = 0
             num_frames = None
         self.recording = Recording(audio_path, start_frame, num_frames)
-        if existing_volume is not None:
-            self.recording.set_volume(existing_volume)
         
     def set_recording_to_preset(self, audio_path):
         wf = WaveFile(audio_path)
@@ -287,6 +283,8 @@ class LoopEngine:
         if self.audio_manager.is_playing():
             self.audio_manager.pause()
         else:
+            print("playing")
+            print(self.audio_manager.mixer.gain)
             self.play_recording_preview(offset, repeat)
 
     def set_recording_volume(self, volume):
