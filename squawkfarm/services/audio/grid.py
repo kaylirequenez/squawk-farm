@@ -1,6 +1,7 @@
 from imslib.clock import SimpleTempoMap, kTicksPerQuarter
 from imslib.audio import Audio
 from squawkfarm.models.loop import GlobalLoopSettings
+from squawkfarm.utils.audio_utils import frame_to_time, time_to_frame
 
 
 MAX_MEASURES = 4
@@ -104,23 +105,17 @@ class Grid:
     def time_to_tick(self, time_sec):
         return self.tempo_map.time_to_tick(time_sec)
 
-    def time_to_frame(self, time_sec):
-        return int(time_sec * Audio.sample_rate)
-
-    def frame_to_time(self, frame):
-        return frame / float(Audio.sample_rate)
-
     def slot_to_frame(self, slot):
         bpm = self.get_bpm()
         ppb = self.get_slots_per_beat()
         seconds_per_slot = (60.0 / bpm) / ppb
         seconds = slot * seconds_per_slot
-        return round(seconds * Audio.sample_rate)
+        return round(time_to_frame(seconds))
 
     def frame_to_slot(self, frame):
         bpm = self.get_bpm()
         ppb = self.get_slots_per_beat()
         seconds_per_slot = (60.0 / bpm) / ppb
-        seconds = frame / Audio.sample_rate
+        seconds = frame_to_time(frame)
         slot = seconds / seconds_per_slot
         return round(slot)

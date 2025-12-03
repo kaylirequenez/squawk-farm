@@ -4,10 +4,9 @@ from imslib.wavegen import WaveGenerator
 from imslib.clock import AudioScheduler
 from kivy.clock import Clock
 
-from squawkfarm.services.audio.grid import Grid
-from squawkfarm.models.loop_runtime import Loop, Recording, RuntimeLoopInstance
-from squawkfarm.models.loop import GlobalLoopSettings
+from squawkfarm.models.loop_runtime import RuntimeLoopInstance
 from squawkfarm.utils import tune_to_midi
+from squawkfarm.utils.audio_utils import frame_to_time, time_to_frame
 
 
 class AudioManager:
@@ -53,7 +52,7 @@ class AudioManager:
         self._on_close = on_close
 
     def on_update(self):
-        self.audio.on_update()
+        self.audio.on_update() 
 
     def is_playing(self):
         return self.playing
@@ -67,9 +66,10 @@ class AudioManager:
     def play(self, start_time=0.0, repeat=False, animal_id=None):
         self.playing = True
         self.current_cycle = 0
+              
         self._schedule_cycle(start_time, repeat, animal_id)
 
-    def pause(self, _tick=None):
+    def pause(self, _=None):
         self.scheduler.commands.clear()
         self.mixer.generators.clear()
         self.playing = False
@@ -81,12 +81,12 @@ class AudioManager:
         self.scheduled_close_events.clear()
 
     def play_recording(self, recording, offset=0.0, repeat=False):
-        gen = recording.get_generator(self.grid.time_to_frame(offset), repeat)
+        gen = recording.get_generator(time_to_frame(offset), repeat)
         self.mixer.add(gen)
+
         self.playing = True
-        
         if not repeat:
-            duration = self.grid.frame_to_time(recording.get_num_frames()) - offset
+            duration = frame_to_time(recording.get_num_frames()) - offset
             end_time = self.scheduler.get_time() + duration
             
             self.scheduler.post_at_tick(
@@ -179,7 +179,7 @@ class AudioManager:
         self.mixer.add(gen)
 
         self._on_sing(animal_id)
-        duration = self.grid.frame_to_time(loop.num_frames)
+        duration = frame_to_time(loop.num_frames)
 
         close_duration = duration * 0.9
 

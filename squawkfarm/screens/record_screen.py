@@ -11,6 +11,8 @@ from kivy.graphics import Color, Line, Rectangle
 from kivy.clock import Clock
 
 from squawkfarm.services.loop_engine import LoopEngine
+from squawkfarm.ui.nowbar import NowBar
+from squawkfarm.utils.audio_utils import time_to_frame
 
 class ImageButton(ButtonBehavior, Image):
     pass
@@ -234,9 +236,14 @@ class RecordScreen(Screen):
         self.left_marker_x = None
         self.right_marker_x = None
         self.dragging_marker = None
+        
         self.default_sound = None
+        
         self._recording_started = False
         self._record_scheduled_event = None
+        
+        self.nowbar = None
+        self.playing_preview = False
 
     def _set_editing_buttons_visible(self, visible):
         self.add_loop_btn.disabled = not visible
@@ -428,6 +435,9 @@ class RecordScreen(Screen):
                 self._update_marker_lines()
             elif len(self.samples) > 0:
                 self._update_wave()
+                
+            if self.nowbar:
+                self.nowbar.on_resize(self.left_marker_x, self.right_marker_x, self.grid.y, self.grid.y + self.grid.height)
 
     def on_update(self):
         if self.writer.active and not self.default_sound:
@@ -436,13 +446,20 @@ class RecordScreen(Screen):
         
         if self.count_in_audio.generator is not None:
             self.count_in_audio.on_update()
-
+            
         self.loop_engine.on_update()
+            
+        if self.nowbar:
+            if self.loop_engine.is_playing():
+                self.nowbar.on_update(Clock.frametime)
+            elif self.playing_preview:
+                self.nowbar.current_time = self.loop_engine.get_recording_duration()
+                self._stop_preview()
 
     def on_exit(self):
-        if self._record_scheduled_event:
-            self._record_scheduled_event.cancel()
-            self._record_scheduled_event = None
+        self._reset_recording_state()
+        self._destroy_nowbar()
+        self._stop_preview()
 
         self._clear_editing_buttons()
         self.record_btn.source = self.record_icon_path
@@ -450,7 +467,6 @@ class RecordScreen(Screen):
         self.loop_engine.pause()
         
         self.max_possible_sample_size = None
-        self._recording_started = False
         self.default_sound = None
 
     def _on_barn_press(self, *_):
@@ -458,6 +474,7 @@ class RecordScreen(Screen):
 
     def _on_record_press(self, *_):
         if not self.writer.active:
+            self._destroy_nowbar()
             self._clear_editing_buttons()
             self.default_sound = None
             if not self._recording_started:
@@ -466,9 +483,53 @@ class RecordScreen(Screen):
                 self._begin_actual_recording(reset=False)
         else:
             self._pause_recording()
+            
+    def _ensure_nowbar(self):
+        if self.nowbar is None:
+            self.nowbar = NowBar(
+                duration=self.loop_engine.get_recording_duration(),
+                start_x=self.left_marker_x,
+                end_x=self.right_marker_x,
+                bottom_y=self.grid.y,
+                top_y=self.grid.y + self.grid.height,
+            )
+            self.canvas.after.add(self.nowbar)
+
+    def _destroy_nowbar(self):
+        if self.nowbar:
+            self.canvas.after.remove(self.nowbar)
+            self.nowbar = None
+            self.playing_preview = False
+
+    def _start_preview(self, start_time=0.0):
+        self._ensure_nowbar()
+        self.loop_engine.play_recording_preview(start_time)
+        self.play_btn.source = self.pause_icon_path
+        self.playing_preview = True
+        
+    def _stop_preview(self):
+        self.play_btn.source = self.play_icon_path
+        self.playing_preview = False
+        if self.loop_engine.is_playing():
+            self.loop_engine.pause()
 
     def _on_play_press(self, *_):
-        self.loop_engine.toggle_play_recording_preview()
+        if self.loop_engine.is_playing():
+            self.loop_engine.pause()
+            self._stop_preview()
+            print("Preview paused")
+        else:
+            start_time = 0.0
+            if self.nowbar:
+                print(self.nowbar.current_time)
+                if self.nowbar.current_time < self.loop_engine.get_recording_duration():
+                    start_time = self.nowbar.current_time
+                else:
+                    self.nowbar.reset()
+                
+            print(f"Starting preview at {start_time:.2f} sec")
+            print("Recording duration:", self.loop_engine.get_recording_duration())
+            self._start_preview(start_time)
 
     def _on_volume_up_press(self, *_):
         self.loop_engine.adjust_recording_volume(0.1)
@@ -495,6 +556,8 @@ class RecordScreen(Screen):
             self.sample_pixels = self._get_sample_pixels(sample_size)
             self._adjust_markers_for_sample_size_change()
             self._update_recording_margins()
+            if self.nowbar:
+                self.nowbar.set_duration(self.loop_engine.get_recording_duration(), self.right_marker_x)
         
     def _reset_recording_state(self):
         self.samples.clear()
@@ -507,12 +570,14 @@ class RecordScreen(Screen):
         self._reset_recording_state()
         self._clear_editing_buttons()
         self.default_sound = sound_name
+        self._destroy_nowbar()
+        self._stop_preview()
         
         audio_path = get_default_sound_path(self.default_sound)
         self.writer.stop()
         self.writer.start(True)
        
-        max_frames = self.loop_engine.grid.time_to_frame(self.record_duration)
+        max_frames = time_to_frame(self.record_duration)
         data = self.writer.add_audio_from_file(audio_path, max_frames)
         self._ingest_for_waveform(data, 1)
         self._update_wave()
@@ -520,6 +585,8 @@ class RecordScreen(Screen):
 
     def _start_recording(self):
         self._reset_recording_state()
+        self._destroy_nowbar()
+        self._stop_preview()
         self.left_marker_x = None
         self.right_marker_x = None
 
@@ -690,10 +757,14 @@ class RecordScreen(Screen):
         if abs(touch.x - self.left_marker_x) < MARKER_TOLERANCE:
             self.dragging_marker = "left"
             touch.grab(self)
+            self._destroy_nowbar()
+            self._stop_preview()
             return True
         elif abs(touch.x - self.right_marker_x) < MARKER_TOLERANCE:
             self.dragging_marker = "right"
             touch.grab(self)
+            self._destroy_nowbar()
+            self._stop_preview()
             return True
 
         return super(RecordScreen, self).on_touch_down(touch)
@@ -725,6 +796,7 @@ class RecordScreen(Screen):
             touch.ungrab(self)
             
             self._update_recording_margins()
+            self._ensure_nowbar()
 
             self.dragging_marker = None
             return True

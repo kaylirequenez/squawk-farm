@@ -9,6 +9,7 @@ from squawkfarm.services.composition.composer import Composer
 from squawkfarm.services.composition.pitch import generate_constrained_pentatonic_pitch_map
 from squawkfarm.services.composition.rhythm import generate_slots
 from squawkfarm.utils import tune_sample_and_save, get_recording_wav_path
+from squawkfarm.utils.audio_utils import frame_to_time, time_to_frame
 
 class LoopEngine:
     def __init__(self, settings, animal_loops=None):
@@ -140,7 +141,7 @@ class LoopEngine:
     def get_recording_duration(self):
         if not self.recording:
             return 0.0
-        return self.grid.frame_to_time(self.recording.get_num_frames())
+        return frame_to_time(self.recording.get_num_frames())
 
     def set_left_margin_of_recording(self, fraction):
         if not self.recording:
@@ -187,7 +188,7 @@ class LoopEngine:
         return self.grid.tick_to_time(tick)
 
     def time_to_slot(self, time_sec):
-        frame = self.grid.time_to_frame(time_sec)
+        frame = time_to_frame(time_sec)
         return self.grid.frame_to_slot(frame)
 
     def get_slots_per_beat(self):
@@ -261,6 +262,9 @@ class LoopEngine:
 
     def on_update(self):
         self.audio_manager.on_update()
+    
+    def is_playing(self):
+        return self.audio_manager.is_playing()
 
     def play(self, start_time=0.0, loop=False, animal_id=None):
         self.audio_manager.play(start_time, loop, animal_id)

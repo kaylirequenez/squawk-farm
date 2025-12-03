@@ -82,7 +82,6 @@ def tune_to_midi(data, base_midi, target_midi):
     :returns: Pitch-shifted audio data.
     """
     semitones = target_midi - base_midi
-    input_len = len(data)
     
     if semitones == 0:
         y_shifted = data
@@ -90,5 +89,11 @@ def tune_to_midi(data, base_midi, target_midi):
         y_shifted = librosa.effects.pitch_shift(data, sr=Audio.sample_rate, n_steps=semitones)
     
     return y_shifted
+
+def time_to_frame(time_sec):
+    return int(time_sec * Audio.sample_rate)
+
+def frame_to_time(frame):
+    return frame / float(Audio.sample_rate)
 
 
