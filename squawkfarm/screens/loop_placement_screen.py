@@ -550,6 +550,7 @@ class LoopPlacementScreen(Screen):
         instances, num_slots = self.loop_engine.get_instances_info(self.animal_id)
 
         base_midi = self.loop_engine.get_base_midi(self.animal_id)
+        print("Base MIDI:", base_midi)
         key_mode = self.loop_engine.get_key_mode()
         slots_per_beat = self.loop_engine.get_slots_per_beat()
 
@@ -558,6 +559,7 @@ class LoopPlacementScreen(Screen):
             quantized_slots = quantize_to_beat_slots(num_slots, slots_per_beat)
             width = self.grid.slots_to_pixels(quantized_slots)
             row = self.midi_to_row(midi, base_midi, key_mode)
+            print("Rebuilding note at start_slot", start_slot, "midi", midi, "row", row)
             y = self.grid.slot_index_to_y(row)
 
             note = self.piano.add_note(
