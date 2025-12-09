@@ -96,12 +96,13 @@ class LoopPlacementScreen(Screen):
             )
         self.barn_btn.bind(on_press=self._on_barn_press)
 
-        # Trash button in bottom left corner (same size as barn)
+        # Trash button in bottom left corner (half size of barn)
         self.trash_path = get_ui_asset_path("trash.png")
         self.trash_texture = Image(source=self.trash_path).texture
+        self.trash_btn_size = self.barn_btn_size / 2
         self.trash_btn = Button(
             size_hint=(None, None),
-            size=(self.barn_btn_size, self.barn_btn_size),
+            size=(self.trash_btn_size, self.trash_btn_size),
             pos=(0, 0),
             background_normal="",
             background_color=(1, 1, 1, 0),
@@ -305,8 +306,9 @@ class LoopPlacementScreen(Screen):
         self.barn_btn.pos = (Window.width - self.barn_btn.width, 0)
         self.barn_rect.size = self.barn_btn.size
         self.barn_rect.pos = self.barn_btn.pos
-        # Resize trash button (same size as barn, bottom left)
-        self.trash_btn.size = (Window.width / 8, Window.width / 8)
+        # Resize trash button (half size of barn, bottom left)
+        self.trash_btn_size = Window.width / 16
+        self.trash_btn.size = (self.trash_btn_size, self.trash_btn_size)
         self.trash_btn.pos = (0, 0)
         self.trash_rect.size = self.trash_btn.size
         self.trash_rect.pos = self.trash_btn.pos
@@ -623,14 +625,21 @@ class LoopPlacementScreen(Screen):
 
         old_start_slot = self._drag_note_start_slot
 
-        # Check if note was dropped in the trash zone
+        # Check if a
         trash_x, trash_y = self.trash_btn.pos
         trash_w, trash_h = self.trash_btn.size
-        note_center_x = note.pos[0] + note.size[0] / 2
-        note_center_y = note.pos[1] + note.size[1] / 2
+        note_x, note_y = note.pos
+        note_w, note_h = note.size
 
-        if (trash_x <= note_center_x <= trash_x + trash_w and
-            trash_y <= note_center_y <= trash_y + trash_h):
+        # Check for rectangle intersection
+        note_overlaps_trash = (
+            note_x < trash_x + trash_w and
+            note_x + note_w > trash_x and
+            note_y < trash_y + trash_h and
+            note_y + note_h > trash_y
+        )
+
+        if note_overlaps_trash:
             # Delete the note
             if old_start_slot is not None:
                 self.loop_engine.remove_loop_instance(self.animal_id, old_start_slot)
