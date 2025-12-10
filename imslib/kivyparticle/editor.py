@@ -5,8 +5,14 @@ from kivy.app import App
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.uix.gridlayout import GridLayout
-from panels import (EmitterConfigPanel, EndColorPanel, GeneralPanel,
-                    ParticleConfigPanel, StartColorPanel, ViewPanel)
+from panels import (
+    EmitterConfigPanel,
+    EndColorPanel,
+    GeneralPanel,
+    ParticleConfigPanel,
+    StartColorPanel,
+    ViewPanel,
+)
 
 
 class ParticleEditor(App):

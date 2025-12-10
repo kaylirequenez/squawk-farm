@@ -10,7 +10,9 @@ TERRAIN_BOUNDARY_RATIO = 0.363
 
 
 class AnimalWidget(Image):
-    def __init__(self, animal, on_click_callback=None, on_drag_end_callback=None, **kwargs):
+    def __init__(
+        self, animal, on_click_callback=None, on_drag_end_callback=None, **kwargs
+    ):
         self.animal = animal
         self.on_click_callback = on_click_callback
         self.on_drag_end_callback = on_drag_end_callback
@@ -56,14 +58,14 @@ class AnimalWidget(Image):
         self.click_button = Button(
             size_hint=(None, None),
             background_color=(0, 0, 0, 0),
-            background_normal='',
+            background_normal="",
         )
         self.click_button.bind(
             on_touch_down=self._on_touch_down,
             on_touch_move=self._on_touch_move,
             on_touch_up=self._on_touch_up,
         )
-        
+
         self.update_from_animal(animal)
 
     def _derive_sprite_paths(self, image_path):
@@ -153,7 +155,9 @@ class AnimalWidget(Image):
                 self.shadow_image.size = self.size
                 self._update_shadow_image()
                 if self._center_x != 0.0 or self._center_y != 0.0:
-                    new_x, new_y = self._update_shadow_pos(self._center_x, self._center_y)
+                    new_x, new_y = self._update_shadow_pos(
+                        self._center_x, self._center_y
+                    )
                     self.pos = (new_x, new_y)
         else:
             if self._last_parent is not None:
@@ -170,16 +174,16 @@ class AnimalWidget(Image):
                     self.shadow_image = None
 
         self._last_parent = parent
-    
+
     def _on_touch_down(self, button, touch):
         if not button.collide_point(*touch.pos):
             return False
-        
+
         # Stop wandering when touched
         self._wander_state = "idle"
         self._wander_target = None
         self._move_start_pos = None
-        
+
         # Start tracking for potential drag
         self._drag_touch = touch
         self._drag_start_pos = (touch.x, touch.y)
@@ -188,71 +192,71 @@ class AnimalWidget(Image):
         self._is_dragging = False
         touch.grab(button)
         return True
-    
+
     def _on_touch_move(self, button, touch):
         if touch.grab_current != button:
             return False
-        
+
         if self._drag_touch != touch:
             return False
-        
+
         # Check if we've moved enough to start dragging
         if self._drag_start_pos:
             dx = abs(touch.x - self._drag_start_pos[0])
             dy = abs(touch.y - self._drag_start_pos[1])
             if dx > self._drag_threshold or dy > self._drag_threshold:
                 self._is_dragging = True
-        
+
         if self._is_dragging:
             # Calculate new center position from touch, accounting for the initial offset
             off_x, off_y = self._drag_offset
             new_center_x = touch.x - off_x
             new_center_y = touch.y - off_y
-            
+
             # Apply bounds constraints - get current window size dynamically for resize support
             width, height = Window.size
-            
+
             # Allow movement across full screen (x=0 to x=width, y=0 to terrain boundary)
             min_center_x = 0
             max_center_x = width
-            
+
             # Y bounds: from very bottom of screen (y=0) to terrain boundary
             max_center_y = height * TERRAIN_BOUNDARY_RATIO
             min_center_y = 0
-            
+
             # Clamp to bounds
             new_center_x = max(min_center_x, min(new_center_x, max_center_x))
             new_center_y = max(min_center_y, min(new_center_y, max_center_y))
-            
+
             # Update position
             self._center_x = new_center_x
             self._center_y = new_center_y
             new_x, new_y = self._update_shadow_pos(self._center_x, self._center_y)
             self.pos = (new_x, new_y)
-            
+
             # Update animal model position
             ground_x = self._center_x - self._base_width / 2
             ground_y = self._center_y - self._base_height / 2
             self.animal.pos = (ground_x, ground_y)
-        
+
         return True
-    
+
     def _on_touch_up(self, button, touch):
         if touch.grab_current != button:
             return False
-        
+
         touch.ungrab(button)
-        
+
         if self._drag_touch != touch:
             return False
-        
+
         was_dragging = self._is_dragging
-        
+
         # Reset drag state
         self._drag_touch = None
         self._drag_start_pos = None
         self._is_dragging = False
-        
+
         # If we weren't dragging, it's a click - trigger callback
         if not was_dragging:
             if self.on_click_callback:
@@ -260,12 +264,14 @@ class AnimalWidget(Image):
         else:
             # After drag, notify the callback with final position
             if self.on_drag_end_callback:
-                self.on_drag_end_callback(self.animal.animal_id, self._center_x, self._center_y)
+                self.on_drag_end_callback(
+                    self.animal.animal_id, self._center_x, self._center_y
+                )
             # Reset wander pause so animal doesn't immediately walk away
             self._wander_pause_remaining = random.uniform(2.0, 5.0)
-        
+
         return True
-    
+
     def move_to(self, pos):
         ground_x, ground_y = pos
         self._center_x = ground_x + self._base_width / 2
@@ -321,6 +327,7 @@ class AnimalWidget(Image):
 
     def _update_shadow_pos(self, center_x, center_y):
         from kivy.core.window import Window
+
         max_y = Window.height * TERRAIN_BOUNDARY_RATIO
 
         y_ratio = center_y / max_y if max_y > 0 else 0.0
@@ -340,14 +347,19 @@ class AnimalWidget(Image):
             self.shadow_image.size = (scaled_width, scaled_height)
             self.shadow_image.pos = (new_x, new_y)
 
-        if hasattr(self, 'click_button'):
-            base_size = self.animal.size if self.animal.size is not None else (100.0, 100.0)
+        if hasattr(self, "click_button"):
+            base_size = (
+                self.animal.size if self.animal.size is not None else (100.0, 100.0)
+            )
             w, h = base_size
             size_scale = max(1.0, w / 100.0) * scale
             btn_w = w * self.click_button_scale * size_scale
             btn_h = h * self.click_button_scale * size_scale
             self.click_button.size = (btn_w, btn_h)
-            self.click_button.pos = (new_x + (scaled_width - btn_w) / 2, new_y + (scaled_height - btn_h) * 0.6)
+            self.click_button.pos = (
+                new_x + (scaled_width - btn_w) / 2,
+                new_y + (scaled_height - btn_h) * 0.6,
+            )
 
         return new_x, new_y
 
@@ -416,7 +428,7 @@ class AnimalWidget(Image):
             self._wander_pause_remaining = random.uniform(1.0, 3.0)
             return
 
-        dist = dist_sq ** 0.5
+        dist = dist_sq**0.5
 
         base_duration = dist / max(self.wander_speed, 1e-6)
         self._move_duration = max(base_duration * 1.1, 0.2)
@@ -486,7 +498,9 @@ class AnimalWidget(Image):
             self._center_x = center_x
             self._center_y = center_y + hop_offset
 
-            adjusted_x, adjusted_y = self._update_shadow_pos(self._center_x, self._center_y)
+            adjusted_x, adjusted_y = self._update_shadow_pos(
+                self._center_x, self._center_y
+            )
 
             self.pos = (adjusted_x, adjusted_y)
 
@@ -498,4 +512,3 @@ class AnimalWidget(Image):
                 self._move_duration = 0.0
                 self._move_elapsed = 0.0
                 self._segment_count = 1
-

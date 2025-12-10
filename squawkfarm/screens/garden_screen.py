@@ -6,13 +6,6 @@ from kivy.core.window import Window
 from kivy.graphics import Rectangle
 from kivy.uix.image import Image
 from kivy.uix.button import Button
-from kivy.graphics.opengl import (
-    glEnable,
-    glBlendFunc,
-    GL_BLEND,
-    GL_SRC_ALPHA,
-    GL_ONE_MINUS_SRC_ALPHA,
-)
 from kivy.clock import Clock
 
 from squawkfarm.services.loop_engine import LoopEngine
@@ -51,7 +44,9 @@ class GardenScreen(Screen):
         self.bpm = 90
 
         with self.canvas.before:
-            self.bg_rect = Rectangle(pos=(0, 0), size=Window.size, texture=self.bg_image)
+            self.bg_rect = Rectangle(
+                pos=(0, 0), size=Window.size, texture=self.bg_image
+            )
 
         self.barn_button = Button(
             size_hint=(None, None),
@@ -93,7 +88,10 @@ class GardenScreen(Screen):
         self.chord_btn = Button(
             size_hint=(None, None),
             size=(self.chord_btn_size, self.chord_btn_size),
-            pos=(Window.width - self.chord_btn_size - 10, Window.height - self.chord_btn_size - 10),
+            pos=(
+                Window.width - self.chord_btn_size - 10,
+                Window.height - self.chord_btn_size - 10,
+            ),
             background_normal="",
             background_color=(1, 1, 1, 0),
         )
@@ -138,7 +136,7 @@ class GardenScreen(Screen):
                 loop = self.loop_engine.loops[animal.animal_id]
                 egg.pre_hatch_volume = loop.volume  # Store original volume
                 loop.set_volume(0.0)
-            
+
             self._update_barn_button_state()
         else:
             widget.update_from_animal(animal)
@@ -175,7 +173,7 @@ class GardenScreen(Screen):
 
         if animal_id in self.loop_engine.loops:
             # Restore the volume that was set in the record screen
-            if hasattr(egg, 'pre_hatch_volume'):
+            if hasattr(egg, "pre_hatch_volume"):
                 self.loop_engine.loops[animal_id].set_volume(egg.pre_hatch_volume)
             self.loop_engine.pause()
             self.loop_engine.play(start_time=0.0, loop=True)
@@ -205,7 +203,9 @@ class GardenScreen(Screen):
     def on_exit(self):
         self.loop_engine.pause()
 
-    def _find_non_colliding_spawn(self, min_x, max_x, max_y, size, min_y, max_attempts=50):
+    def _find_non_colliding_spawn(
+        self, min_x, max_x, max_y, size, min_y, max_attempts=50
+    ):
         for _ in range(max_attempts):
             x = random.uniform(min_x, max_x)
             y = random.uniform(min_y, max_y)
@@ -274,7 +274,10 @@ class GardenScreen(Screen):
         self.trash_rect.pos = (0, 0)
         self.chord_btn_size = Window.width / 10
         self.chord_btn.size = (self.chord_btn_size, self.chord_btn_size)
-        self.chord_btn.pos = (Window.width - self.chord_btn_size - 10, Window.height - self.chord_btn_size - 10)
+        self.chord_btn.pos = (
+            Window.width - self.chord_btn_size - 10,
+            Window.height - self.chord_btn_size - 10,
+        )
         self.chord_rect.size = self.chord_btn.size
         self.chord_rect.pos = self.chord_btn.pos
 
@@ -327,10 +330,12 @@ class GardenScreen(Screen):
         # Get trash button bounds
         trash_x, trash_y = self.trash_btn.pos
         trash_w, trash_h = self.trash_btn.size
-        
+
         # Check if the animal center is within the trash zone
-        if (trash_x <= center_x <= trash_x + trash_w and
-            trash_y <= center_y <= trash_y + trash_h):
+        if (
+            trash_x <= center_x <= trash_x + trash_w
+            and trash_y <= center_y <= trash_y + trash_h
+        ):
             self.delete_animal(animal_id)
 
     def delete_animal(self, animal_id):

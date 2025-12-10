@@ -3,6 +3,7 @@ from kivy.core.window import Window
 from kivy.clock import Clock
 from squawkfarm.utils import get_ui_asset_path
 
+
 class SunWidget(Image):
     def __init__(self, **kwargs):
         kwargs.setdefault("size_hint", (None, None))
@@ -16,8 +17,10 @@ class SunWidget(Image):
         self._medium_size = (Window.height * 0.15, Window.height * 0.15)
         self._large_size = (Window.height * 0.17, Window.height * 0.17)
 
-        self._center_target = (self._medium_size[0]*1.3 / 2.0,
-                               Window.height - self._medium_size[1]*1.3 / 2.0)
+        self._center_target = (
+            self._medium_size[0] * 1.3 / 2.0,
+            Window.height - self._medium_size[1] * 1.3 / 2.0,
+        )
 
         self._update_size_and_pos()
 
@@ -31,7 +34,7 @@ class SunWidget(Image):
         # update the stored target center Y (X stays same)
         self._center_target = (
             self._center_target[0],
-            Window.height - self.height / 2.0
+            Window.height - self.height / 2.0,
         )
 
         self._update_size_and_pos()
@@ -47,5 +50,4 @@ class SunWidget(Image):
             self.size = self._medium_size
 
         cx, cy = self._center_target
-        self.pos = (cx - self.width / 2.0,
-                    cy - self.height / 2.0)
+        self.pos = (cx - self.width / 2.0, cy - self.height / 2.0)

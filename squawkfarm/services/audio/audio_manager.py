@@ -52,7 +52,7 @@ class AudioManager:
         self._on_close = on_close
 
     def on_update(self):
-        self.audio.on_update() 
+        self.audio.on_update()
 
     def is_playing(self):
         return self.playing
@@ -66,13 +66,17 @@ class AudioManager:
     def play(self, start_time=0.0, repeat=False, animal_id=None):
         self.playing = True
         self.current_cycle = 0
-              
+
         self._schedule_cycle(start_time, repeat, animal_id)
-        
+
         if not repeat:
             total_ticks = self.grid.slot_to_tick(self.grid.get_total_slots())
-            end_tick = total_ticks - self.grid.time_to_tick(start_time) + self.scheduler.get_tick()
-            
+            end_tick = (
+                total_ticks
+                - self.grid.time_to_tick(start_time)
+                + self.scheduler.get_tick()
+            )
+
             self.scheduler.post_at_tick(
                 self.pause,
                 end_tick,
@@ -97,7 +101,7 @@ class AudioManager:
         if not repeat:
             duration = frame_to_time(recording.get_num_frames()) - offset
             end_time = self.scheduler.get_time() + duration
-            
+
             self.scheduler.post_at_tick(
                 self.pause,
                 self.grid.tempo_map.time_to_tick(end_time),
@@ -109,7 +113,11 @@ class AudioManager:
         tick_offset = self.grid.time_to_tick(start_time)
 
         # Filter loops if animal_id is specified
-        loops_to_play = {filter_animal_id: self.loops[filter_animal_id]} if filter_animal_id and filter_animal_id in self.loops else self.loops
+        loops_to_play = (
+            {filter_animal_id: self.loops[filter_animal_id]}
+            if filter_animal_id and filter_animal_id in self.loops
+            else self.loops
+        )
 
         for animal_id, loop in loops_to_play.items():
             for start_slot, _ in loop.instances.items():
@@ -128,15 +136,24 @@ class AudioManager:
                     else:
                         continue
 
-                transpose_semitones, chord_quality = self.get_chord_info_at_slot(start_slot)
+                transpose_semitones, chord_quality = self.get_chord_info_at_slot(
+                    start_slot
+                )
 
                 self.scheduler.post_at_tick(
                     self._start_section_playback,
                     tick - tick_offset + now,
-                    (animal_id, start_slot, frame_offset, transpose_semitones, chord_quality),
+                    (
+                        animal_id,
+                        start_slot,
+                        frame_offset,
+                        transpose_semitones,
+                        chord_quality,
+                    ),
                 )
 
         if repeat:
+
             def callback(_):
                 self.current_cycle += 1
                 self._schedule_cycle(0.0, repeat, filter_animal_id)
@@ -172,7 +189,9 @@ class AudioManager:
         target_midi += quality_adjustment
 
         if transpose_semitones != 0 or quality_adjustment != 0:
-            transposed_data = tune_to_midi(loop.current, loop.original_midi, target_midi)
+            transposed_data = tune_to_midi(
+                loop.current, loop.original_midi, target_midi
+            )
             temp_instance = RuntimeLoopInstance(transposed_data)
             gen = WaveGenerator(temp_instance, False)
         else:

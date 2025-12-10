@@ -6,6 +6,7 @@
 #####################################################################
 
 import os
+
 # allow running this from imslib or the root folder
 import sys
 

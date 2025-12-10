@@ -7,7 +7,16 @@ from squawkfarm.utils import get_ui_asset_path
 
 
 class LoopGrid(InstructionGroup):
-    def __init__(self, total_slots, slots_per_beat, slots_per_measure, x_margin=0, y_margin=0, draw_rows=False, skip_outer_lines=False):
+    def __init__(
+        self,
+        total_slots,
+        slots_per_beat,
+        slots_per_measure,
+        x_margin=0,
+        y_margin=0,
+        draw_rows=False,
+        skip_outer_lines=False,
+    ):
         super(LoopGrid, self).__init__()
         self.total_slots = total_slots
         self.slots_per_beat = slots_per_beat
@@ -24,20 +33,24 @@ class LoopGrid(InstructionGroup):
 
         self.marker_styles = {
             "measure": ((0.10, 0.10, 0.10, 1.0), 3.0, 1.00),
-            "beat":    ((0.30, 0.30, 0.30, 0.9), 2.0, 1.00),
-            "pulse":   ((0.70, 0.70, 0.70, 0.4), 0.8, 1.00),
+            "beat": ((0.30, 0.30, 0.30, 0.9), 2.0, 1.00),
+            "pulse": ((0.70, 0.70, 0.70, 0.4), 0.8, 1.00),
         }
 
         self.draw_rows = draw_rows
         self.skip_outer_lines = skip_outer_lines
 
         self.on_resize((Window.width, Window.height))
-        
+
     def _draw_background(self):
         self.add(Color(1, 1, 1, 1))
-        self._bg_rect = Rectangle(pos=(self.x, self.y), size=(self.width, self.height), texture=self.bg_texture)
+        self._bg_rect = Rectangle(
+            pos=(self.x, self.y),
+            size=(self.width, self.height),
+            texture=self.bg_texture,
+        )
         self.add(self._bg_rect)
-    
+
     def _draw_grid(self):
         slot_w = self.width / self.total_slots
 
@@ -67,7 +80,9 @@ class LoopGrid(InstructionGroup):
             for row in range(num_rows + 1):
                 y = self.y + row * self.slot_height()
                 self.add(Color(*pulse_color))
-                self.add(Line(points=[self.x, y, self.x + self.width, y], width=pulse_width))
+                self.add(
+                    Line(points=[self.x, y, self.x + self.width, y], width=pulse_width)
+                )
 
     def on_resize(self, win_size):
         win_w, win_h = win_size
@@ -78,7 +93,7 @@ class LoopGrid(InstructionGroup):
         self.clear()
         self._draw_background()
         self._draw_grid()
-        
+
     def slot_width(self):
         return self.width / float(self.total_slots)
 

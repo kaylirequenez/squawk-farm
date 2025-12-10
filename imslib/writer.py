@@ -42,7 +42,7 @@ class AudioWriter(object):
             # convert audio from num_channels to the # channels selected for writing
             data = convert_channels(data, num_channels, self.num_channels)
             self.buffers.append(data)
-            
+
     def add_audio_from_file(self, filename, max_num_frames):
         """Function to add audio from a wave file into AudioWriter's internal buffer.
 
@@ -55,9 +55,9 @@ class AudioWriter(object):
         audio_data = np.frombuffer(raw_data, dtype=np.int16).astype(float) / (2**15)
         in_channels = wf.getnchannels()
         data = convert_channels(audio_data, in_channels, self.num_channels)
-        self.buffers.append(data[:max_num_frames * self.num_channels])
+        self.buffers.append(data[: max_num_frames * self.num_channels])
         wf.close()
-        
+
         return data
 
     def toggle(self):
@@ -95,8 +95,12 @@ class AudioWriter(object):
                 print("AudioWriter: empty buffers. Nothing to write")
                 return
 
-            filename = os.path.join(self.filebase, filename + ".wav") if filename else self._get_filename("wav")
-            
+            filename = (
+                os.path.join(self.filebase, filename + ".wav")
+                if filename
+                else self._get_filename("wav")
+            )
+
             print("AudioWriter: saving", len(output), "samples in", filename)
             write_wave_file(output, self.num_channels, filename)
 

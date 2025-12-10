@@ -31,10 +31,8 @@ class ShadowButton(Button):
 
         with self.canvas.before:
             Color(0.15, 0.1, 0.05, 0.7)
-            self._shadow_rect = Rectangle(
-                pos=(self.x + 5, self.y - 5),
-                size=self.size
-            )
+            self._shadow_rect = Rectangle(pos=(self.x + 5, self.y - 5), size=self.size)
+
 
 from imslib.screen import Screen
 
@@ -63,6 +61,7 @@ def get_octave_c_for_animal(base_midi):
     c_down = base_midi - (base_midi % 12)
     c_up = c_down + 12
     return c_down if abs(base_midi - c_down) <= abs(base_midi - c_up) else c_up
+
 
 class LoopPlacementScreen(Screen):
     def __init__(self, **kwargs):
@@ -113,15 +112,15 @@ class LoopPlacementScreen(Screen):
                 size=self.trash_btn.size,
                 texture=self.trash_texture,
             )
-            
+
         self.add_button = ShadowButton(
             text="[b]Add[/b]",
             markup=True,
             size_hint=(None, None),
             size=(120, 80),
             pos=(self.trash_btn.width + 20, 10),
-            background_normal='',
-            background_down='',
+            background_normal="",
+            background_down="",
             background_color=(1, 0.75, 0.85, 1),
             color=(0.05, 0.05, 0.3, 1),
             font_size=18,
@@ -135,7 +134,10 @@ class LoopPlacementScreen(Screen):
             source=self.play_icon_path,
             size_hint=(None, None),
             size=(self.sample_btn_size, self.sample_btn_size),
-            pos=(Window.width / 2 - self.sample_btn_size / 2, Window.height - self.sample_btn_size - 10),
+            pos=(
+                Window.width / 2 - self.sample_btn_size / 2,
+                Window.height - self.sample_btn_size - 10,
+            ),
         )
         self.sample_button.bind(on_press=self._on_sample_press)
 
@@ -155,9 +157,15 @@ class LoopPlacementScreen(Screen):
             source=self.up_icon_path,
             size_hint=(None, None),
             size=(self.octave_btn_size, self.octave_btn_size),
-            pos=(20 + self.octave_btn_size + 10, Window.height - self.octave_btn_size - 10),
+            pos=(
+                20 + self.octave_btn_size + 10,
+                Window.height - self.octave_btn_size - 10,
+            ),
         )
-        self.octave_up_button.bind(on_touch_down=self._on_octave_up_touch_down, on_touch_up=self._on_octave_up_touch_up)
+        self.octave_up_button.bind(
+            on_touch_down=self._on_octave_up_touch_down,
+            on_touch_up=self._on_octave_up_touch_up,
+        )
 
         self.octave_down_button = ImageButton(
             source=self.down_icon_path,
@@ -165,7 +173,10 @@ class LoopPlacementScreen(Screen):
             size=(self.octave_btn_size, self.octave_btn_size),
             pos=(20, Window.height - self.octave_btn_size - 10),
         )
-        self.octave_down_button.bind(on_touch_down=self._on_octave_down_touch_down, on_touch_up=self._on_octave_down_touch_up)
+        self.octave_down_button.bind(
+            on_touch_down=self._on_octave_down_touch_down,
+            on_touch_up=self._on_octave_down_touch_up,
+        )
 
         self.volume_btn_size = 100
         self.plus_icon_path = get_ui_asset_path("plus.png")
@@ -174,12 +185,15 @@ class LoopPlacementScreen(Screen):
         self.volume_slider = Slider(
             min=0.0,
             max=1.0,
-            value=1.0,      # will be synced in _update_volume_label
+            value=1.0,  # will be synced in _update_volume_label
             step=0.1,
             size_hint=(None, None),
-            size=(40, Window.height * 0.25),  # temporary; real size set in _position_volume_slider_to_grid
+            size=(
+                40,
+                Window.height * 0.25,
+            ),  # temporary; real size set in _position_volume_slider_to_grid
             pos=(Window.width - 60, self.grid_y_margin),
-            orientation='vertical',
+            orientation="vertical",
             value_track=True,
             value_track_color=(1, 0.4, 0.7, 1),  # pink track
         )
@@ -188,7 +202,7 @@ class LoopPlacementScreen(Screen):
 
         self._adding_note = False
         self._new_note = None
-        
+
         # Octave shifting state
         self._octave_shift_active = False
         self._octave_shift_direction = 0  # 1 for up, -1 for down
@@ -201,14 +215,14 @@ class LoopPlacementScreen(Screen):
             size_hint=(None, None),
             size=(220, 80),
             pos=(Window.width / 2 - 110, 20),
-            background_normal='',
-            background_down='',
+            background_normal="",
+            background_down="",
             background_color=(0.8, 0.9, 1, 1),
             color=(0.05, 0.05, 0.3, 1),
             font_size=20,
         )
         self.toggle_sequence_btn.bind(on_press=self._on_toggle_sequence_press)
-        
+
         self.nowbar = None
         self.playing_preview = False
 
@@ -248,7 +262,9 @@ class LoopPlacementScreen(Screen):
         with self.canvas.before:
             Color(1, 1, 1, 1)
             lawn_path = get_ui_asset_path("lawn.png")
-            lawn_tex = Image(source=lawn_path).texture if os.path.exists(lawn_path) else None
+            lawn_tex = (
+                Image(source=lawn_path).texture if os.path.exists(lawn_path) else None
+            )
             if lawn_tex:
                 self.bg_rect = Rectangle(pos=(0, 0), size=Window.size, texture=lawn_tex)
 
@@ -263,11 +279,16 @@ class LoopPlacementScreen(Screen):
         )
         self.canvas.before.add(self.grid)
         self._position_volume_slider_to_grid()
-        
+
         self.add_button.size = (self.grid.y, self.grid.y / 2)
-        self.add_button.pos = (self.trash_btn.width + 20, self.grid.y / 2 - self.grid.y / 4)
-        
-        self.duration = self.loop_engine.slot_to_time(self.loop_engine.get_total_slots())
+        self.add_button.pos = (
+            self.trash_btn.width + 20,
+            self.grid.y / 2 - self.grid.y / 4,
+        )
+
+        self.duration = self.loop_engine.slot_to_time(
+            self.loop_engine.get_total_slots()
+        )
 
         self.piano.size = Window.size
         self.piano.pos = (0, 0)
@@ -279,17 +300,19 @@ class LoopPlacementScreen(Screen):
         self._add_button_widgets()
         self._update_volume_label()
 
-
     def on_resize(self, winsize):
         # Resize background
-        if hasattr(self, 'bg_rect'):
+        if hasattr(self, "bg_rect"):
             self.bg_rect.pos = (0, 0)
             self.bg_rect.size = Window.size
-        
+
         self.sample_btn_size = 80
         self.sample_button.size = (self.sample_btn_size, self.sample_btn_size)
-        self.sample_button.pos = (Window.width / 2 - self.sample_btn_size / 2, Window.height - self.sample_btn_size - 10)
-        
+        self.sample_button.pos = (
+            Window.width / 2 - self.sample_btn_size / 2,
+            Window.height - self.sample_btn_size - 10,
+        )
+
         self.octave_up_button.size = (self.octave_btn_size, self.octave_btn_size)
         self.octave_up_button.pos = (
             20 + self.octave_btn_size + 10,
@@ -301,7 +324,7 @@ class LoopPlacementScreen(Screen):
             Window.height - self.octave_btn_size - 10,
         )
         self.octave_label.pos = (20, Window.height - 60)
-        
+
         self.barn_btn.size = (Window.width / 8, Window.width / 8)
         self.barn_btn.pos = (Window.width - self.barn_btn.width, 0)
         self.barn_rect.size = self.barn_btn.size
@@ -319,10 +342,13 @@ class LoopPlacementScreen(Screen):
             self.grid.on_resize(winsize)
             self._rebuild_piano_from_engine()
             self._position_volume_slider_to_grid()
-            
+
             self.add_button.size = (self.grid.y, self.grid.y / 2)
-            self.add_button.pos = (self.trash_btn.width + 20, self.grid.y / 2 - self.grid.y / 4)
-            
+            self.add_button.pos = (
+                self.trash_btn.width + 20,
+                self.grid.y / 2 - self.grid.y / 4,
+            )
+
             self.toggle_sequence_btn.pos = (
                 Window.width / 2 - self.toggle_sequence_btn.width / 2,
                 self.grid.y / 2 - self.grid.y / 4,
@@ -330,9 +356,14 @@ class LoopPlacementScreen(Screen):
 
         self.piano.size = Window.size
         self.piano.pos = (0, 0)
-        
+
         if self.nowbar:
-            self.nowbar.on_resize(self.grid.x, self.grid.x + self.grid.width, self.grid.y, self.grid.y + self.grid.height)
+            self.nowbar.on_resize(
+                self.grid.x,
+                self.grid.x + self.grid.width,
+                self.grid.y,
+                self.grid.y + self.grid.height,
+            )
 
     def _stop_preview(self):
         self.sample_button.source = self.play_icon_path
@@ -342,7 +373,7 @@ class LoopPlacementScreen(Screen):
 
     def on_update(self):
         self.loop_engine.on_update()
-        
+
         if self.nowbar:
             if self.loop_engine.is_playing():
                 self.nowbar.on_update(Clock.frametime)
@@ -363,13 +394,13 @@ class LoopPlacementScreen(Screen):
 
     def _on_barn_press(self, *_):
         self.switch_to("garden")
-        
+
     def _start_preview(self, start_time=0.0):
         self._ensure_nowbar()
         self.loop_engine.play(start_time, animal_id=self.animal_id)
         self.sample_button.source = self.pause_icon_path
         self.playing_preview = True
-        
+
     def _ensure_nowbar(self):
         if self.nowbar is None:
             self.nowbar = NowBar(
@@ -400,15 +431,15 @@ class LoopPlacementScreen(Screen):
                     self.nowbar.reset()
 
             self._start_preview(start_time)
-            
+
     def _on_volume_slider_change(self, _, value):
         self.loop_engine.set_loop_volume(self.animal_id, value)
-        
+
     def _update_volume_label(self):
         vol = self.loop_engine.get_loop_volume(self.animal_id)
         if hasattr(self, "volume_slider"):
             self.volume_slider.value = vol
-            
+
     def _position_volume_slider_to_grid(self):
         if not hasattr(self, "grid"):
             return
@@ -427,7 +458,6 @@ class LoopPlacementScreen(Screen):
         y = self.grid.y + self.grid.height - target_height
 
         self.volume_slider.pos = (x, y)
-
 
     def _on_octave_up_touch_down(self, button, touch):
         if button.collide_point(*touch.pos):
@@ -458,18 +488,17 @@ class LoopPlacementScreen(Screen):
     def _start_continuous_octave_shift(self):
         """Schedule continuous octave shifting"""
         from kivy.clock import Clock
-        
+
         # Cancel any existing scheduled event
         if self._octave_shift_event:
             self._octave_shift_event.cancel()
-        
+
         # Perform first shift immediately
         self._do_octave_shift()
-        
+
         # Then schedule repeated shifts every 0.1 seconds
         self._octave_shift_event = Clock.schedule_interval(
-            lambda dt: self._do_octave_shift(),
-            0.1
+            lambda dt: self._do_octave_shift(), 0.1
         )
 
     def _stop_continuous_octave_shift(self):
@@ -482,7 +511,9 @@ class LoopPlacementScreen(Screen):
         """Perform a single octave shift"""
         self._destroy_nowbar()
         self._stop_preview()
-        self.loop_engine.shift_animal_octave(self.animal_id, self._octave_shift_direction)
+        self.loop_engine.shift_animal_octave(
+            self.animal_id, self._octave_shift_direction
+        )
         self._rebuild_piano_from_engine()
 
     def _on_add_press(self, *_):
@@ -492,8 +523,10 @@ class LoopPlacementScreen(Screen):
         loop_slots = self.loop_engine.grid.frame_to_slot(
             self.loop_engine.loops[self.animal_id].num_frames
         )
-        quantized_slots = quantize_to_beat_slots(loop_slots, self.loop_engine.get_slots_per_beat())
-        
+        quantized_slots = quantize_to_beat_slots(
+            loop_slots, self.loop_engine.get_slots_per_beat()
+        )
+
         width = self.grid.slots_to_pixels(quantized_slots)
         height = self.grid.slot_height()
 
@@ -552,7 +585,6 @@ class LoopPlacementScreen(Screen):
         instances, num_slots = self.loop_engine.get_instances_info(self.animal_id)
 
         base_midi = self.loop_engine.get_base_midi(self.animal_id)
-        print("Base MIDI:", base_midi)
         key_mode = self.loop_engine.get_key_mode()
         slots_per_beat = self.loop_engine.get_slots_per_beat()
 
@@ -561,7 +593,6 @@ class LoopPlacementScreen(Screen):
             quantized_slots = quantize_to_beat_slots(num_slots, slots_per_beat)
             width = self.grid.slots_to_pixels(quantized_slots)
             row = self.midi_to_row(midi, base_midi, key_mode)
-            print("Rebuilding note at start_slot", start_slot, "midi", midi, "row", row)
             y = self.grid.slot_index_to_y(row)
 
             note = self.piano.add_note(
@@ -591,14 +622,13 @@ class LoopPlacementScreen(Screen):
 
         return False
 
-
     def on_touch_move(self, touch):
         if not self._drag_note:
             return super().on_touch_move(touch)
 
         self._destroy_nowbar()
         self._stop_preview()
-        
+
         off_x, off_y = self._drag_offset
 
         # Desired top-left in window coords
@@ -606,15 +636,16 @@ class LoopPlacementScreen(Screen):
         new_y = touch.y - off_y
 
         # Allow x to go to 0 (towards trash) but not past right edge of grid
-        new_x = max(0,
-                    min(new_x, self.grid.x + self.grid.width - self._drag_note.size[0]))
+        new_x = max(
+            0, min(new_x, self.grid.x + self.grid.width - self._drag_note.size[0])
+        )
         # Allow y to go down to 0 (towards trash) but not above grid
-        new_y = max(0,
-                    min(new_y, self.grid.y + self.grid.height - self._drag_note.size[1]))
+        new_y = max(
+            0, min(new_y, self.grid.y + self.grid.height - self._drag_note.size[1])
+        )
 
         self._drag_note.set_position(new_x, new_y)
         return True
-
 
     def on_touch_up(self, touch):
         if not self._drag_note:
@@ -633,10 +664,10 @@ class LoopPlacementScreen(Screen):
 
         # Check for rectangle intersection
         note_overlaps_trash = (
-            note_x < trash_x + trash_w and
-            note_x + note_w > trash_x and
-            note_y < trash_y + trash_h and
-            note_y + note_h > trash_y
+            note_x < trash_x + trash_w
+            and note_x + note_w > trash_x
+            and note_y < trash_y + trash_h
+            and note_y + note_h > trash_y
         )
 
         if note_overlaps_trash:
@@ -669,10 +700,7 @@ class LoopPlacementScreen(Screen):
 
         if old_start_slot is None:
             success = self.loop_engine.add_loop_instance(
-                self.animal_id,
-                column,
-                overlap=False,
-                midi=final_midi
+                self.animal_id, column, overlap=False, midi=final_midi
             )
 
             if success:

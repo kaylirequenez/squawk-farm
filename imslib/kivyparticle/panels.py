@@ -14,9 +14,14 @@ from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 from kivy.uix.stencilview import StencilView
 from kivy.uix.textinput import TextInput
-from particleconfig import (END_COLOR_PARAMETERS, GRAVITY_EMITTER_PARAMETERS,
-                            PARTICLE_PARAMETERS, RADIAL_EMITTER_PARAMETERS,
-                            START_COLOR_PARAMETERS, format_config)
+from particleconfig import (
+    END_COLOR_PARAMETERS,
+    GRAVITY_EMITTER_PARAMETERS,
+    PARTICLE_PARAMETERS,
+    RADIAL_EMITTER_PARAMETERS,
+    START_COLOR_PARAMETERS,
+    format_config,
+)
 from slider import ParamSlider
 
 sys.path.insert(0, os.path.abspath(".."))

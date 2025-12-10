@@ -1,5 +1,5 @@
-MIN_ROOT = 48   # C3
-MAX_ROOT = 72   # C5
+MIN_ROOT = 48  # C3
+MAX_ROOT = 72  # C5
 
 
 class Composer:
@@ -59,10 +59,10 @@ class Composer:
     def guess_initial_role(self, animal_midi, beats):
         base_role = self._guess_role_from_pitch(animal_midi, self.root)
 
-        bass_count   = len(self.animals_by_role.get("bass"))
+        bass_count = len(self.animals_by_role.get("bass"))
         melody_count = len(self.animals_by_role.get("melody"))
         offset = animal_midi - self.root
-        
+
         # Long, sustained phrase + mid/high pitch → more harmony-ish
         if beats >= 3.0:
             if base_role == "melody":
