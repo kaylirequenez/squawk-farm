@@ -28,7 +28,7 @@ class EggWidget(Image):
             size_hint=(None, None),
             size=self.size,
             background_color=(0, 0, 0, 0),
-            background_normal='',
+            background_normal="",
         )
         self.click_button.bind(on_press=self._on_click)
 
@@ -37,9 +37,7 @@ class EggWidget(Image):
             parent.add_widget(self.click_button)
             if self.shadow_image is None:
                 self.shadow_image = Image(
-                    source=self.shadow_path,
-                    size_hint=(None, None),
-                    size=self.size
+                    source=self.shadow_path, size_hint=(None, None), size=self.size
                 )
                 parent.add_widget(self.shadow_image, index=0)
                 self._update_shadow_pos()

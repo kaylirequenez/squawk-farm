@@ -1,6 +1,4 @@
 from imslib.clock import SimpleTempoMap, kTicksPerQuarter
-from imslib.audio import Audio
-from squawkfarm.models.loop import GlobalLoopSettings
 from squawkfarm.utils.audio_utils import frame_to_time, time_to_frame
 
 
@@ -10,17 +8,25 @@ MAX_BPM = 120
 
 COMMON_TIME_SIGNATURES = [
     # simple duple
-    (2, 4), (2, 2),
+    (2, 4),
+    (2, 2),
     # simple triple
-    (3, 8), (3, 4), (3, 2),
+    (3, 8),
+    (3, 4),
+    (3, 2),
     # simple quadruple
-    (4, 8), (4, 4), (4, 2),
+    (4, 8),
+    (4, 4),
+    (4, 2),
     # compound duple
-    (6, 8), (6, 4),
+    (6, 8),
+    (6, 4),
     # compound triple
-    (9, 8), (9, 4),
+    (9, 8),
+    (9, 4),
     # compound quadruple
-    (12, 8), (12, 4),
+    (12, 8),
+    (12, 4),
 ]
 
 
@@ -31,7 +37,7 @@ class Grid:
 
     def __init__(self, settings):
         self.measures = settings.measures
-        self.time_sig = settings.time_sig   # (numerator, denominator)
+        self.time_sig = settings.time_sig  # (numerator, denominator)
         self.tempo_map = SimpleTempoMap(settings.bpm)
 
     # ------------------------------------------------------------------ #
@@ -101,7 +107,7 @@ class Grid:
 
     def tick_to_time(self, tick):
         return self.tempo_map.tick_to_time(tick)
-    
+
     def tick_to_frame(self, tick):
         return time_to_frame(self.tick_to_time(tick))
 

@@ -4,7 +4,10 @@ from squawkfarm.services.composition.beat_templates import (
     ROLE_TEMPLATES,
 )
 
-def _pick_templates_for_key(role: str, slots_per_measure: int, loop_slots: int) -> list[list[int]]:
+
+def _pick_templates_for_key(
+    role: str, slots_per_measure: int, loop_slots: int
+) -> list[list[int]]:
     """
     Returns a non-empty list of templates (each template is a list[int] of local slots).
     Falls back to [[0]] if no templates exist for this role/key.
@@ -12,16 +15,17 @@ def _pick_templates_for_key(role: str, slots_per_measure: int, loop_slots: int) 
     template_table = ROLE_TEMPLATES.get(role)
     if template_table is None:
         return [[0]]
-    
+
     key = (slots_per_measure, loop_slots)
-    
+
     templates = template_table.get(key)
-    
+
     # Fallback to a default template if none exist for this key
     if templates is None:
         return [[0]]
-    
+
     return templates
+
 
 def expand_template(
     template_slots: list[int],
@@ -70,9 +74,7 @@ def _score_template_pair_global(
 
     strong_local = STRONG_SLOTS.get(slots_per_measure)
     strong_global = {
-        m * slots_per_measure + s
-        for m in range(total_measures)
-        for s in strong_local
+        m * slots_per_measure + s for m in range(total_measures) for s in strong_local
     }
 
     overlap = setA & setB
@@ -111,13 +113,13 @@ def _score_global_density(
     for s in candidate_global:
         c = counts.get(s, 0)
         if c == 0:
-            score += 3   # fills empty space
+            score += 3  # fills empty space
         elif c == 1:
-            score += 1   # light layering
+            score += 1  # light layering
         elif c == 2:
-            score -= 1   # getting busy
+            score -= 1  # getting busy
         else:
-            score -= 3   # 3+ layers on same slot is too much
+            score -= 3  # 3+ layers on same slot is too much
 
     if len(candidate_global) > slots_per_measure:
         score -= 2  # very dense line
@@ -133,17 +135,18 @@ def _score_candidate_global(
     total_measures: int,
 ) -> int:
     same_role_score = sum(
-        _score_template_pair_global(base, candidate_global, slots_per_measure, total_measures)
+        _score_template_pair_global(
+            base, candidate_global, slots_per_measure, total_measures
+        )
         for base in same_role_globals
     )
 
     density_score = _score_global_density(
-        candidate_global,
-        all_role_globals,
-        slots_per_measure
+        candidate_global, all_role_globals, slots_per_measure
     )
 
     return same_role_score + density_score
+
 
 def generate_slots(
     role: str,
@@ -211,12 +214,14 @@ def generate_slots(
             else:
                 score = 0
 
-            candidates.append({
-                "pattern": pattern,
-                "score": score,
-                "template_slots": template_slots,
-                "active_measures": active_measures,
-            })
+            candidates.append(
+                {
+                    "pattern": pattern,
+                    "score": score,
+                    "template_slots": template_slots,
+                    "active_measures": active_measures,
+                }
+            )
 
     # Sort best → worst
     candidates.sort(key=lambda c: c["score"], reverse=True)

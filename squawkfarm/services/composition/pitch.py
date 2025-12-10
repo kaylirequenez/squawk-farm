@@ -3,14 +3,14 @@ from typing import Dict, List, Tuple
 
 PENTATONIC_INTERVALS = [0, 2, 4, 7, 9]
 
-NUM_ROWS_PER_KEY = 8  
-POOL_LOW_MIDI   = 36 
-POOL_HIGH_MIDI  = 96      
+NUM_ROWS_PER_KEY = 8
+POOL_LOW_MIDI = 36
+POOL_HIGH_MIDI = 96
 
 
-def build_pentatonic_pool(root_midi: int,
-                          low: int = POOL_LOW_MIDI,
-                          high: int = POOL_HIGH_MIDI) -> List[int]:
+def build_pentatonic_pool(
+    root_midi: int, low: int = POOL_LOW_MIDI, high: int = POOL_HIGH_MIDI
+) -> List[int]:
     """
     Build a pentatonic pool of MIDI notes around the given root,
     clamped into [low, high].

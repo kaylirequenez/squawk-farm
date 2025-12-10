@@ -87,7 +87,7 @@ class WaveBuffer(object):
 
         # get a local copy of the audio data from WaveFile
         wr = WaveFile(filepath)
-        self.clean_data = wr.get_frames(start_frame, num_frames)    
+        self.clean_data = wr.get_frames(start_frame, num_frames)
         self.data = wr.get_frames(start_frame, num_frames)
         self.num_channels = wr.get_num_channels()
 
@@ -128,13 +128,13 @@ class WaveBuffer(object):
         start_sample = start_frame * self.num_channels
         end_sample = (start_frame + num_frames) * self.num_channels
         return self.data[start_sample:end_sample]
-    
+
     def get_num_channels(self):
         """
         :returns: The number of channels of the wave buffer.
         """
         return self.num_channels
-    
+
     def get_num_frames(self):
         """
         :returns: The number of frames in the wave buffer.

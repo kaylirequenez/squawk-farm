@@ -33,10 +33,18 @@ W_FRAME, H_FRAME = 420, 340
 
 PALETTES = [
     dict(base=(242, 204, 38, 255), accent=(255, 238, 150, 255), dark=(45, 45, 45, 255)),
-    dict(base=(160, 231, 229, 255), accent=(200, 245, 244, 255), dark=(40, 60, 60, 255)),
-    dict(base=(180, 167, 255, 255), accent=(210, 200, 255, 255), dark=(60, 50, 100, 255)),
-    dict(base=(255, 174, 188, 255), accent=(255, 210, 220, 255), dark=(50, 30, 50, 255)),
-    dict(base=(137, 207, 240, 255), accent=(190, 230, 255, 255), dark=(40, 60, 90, 255)),
+    dict(
+        base=(160, 231, 229, 255), accent=(200, 245, 244, 255), dark=(40, 60, 60, 255)
+    ),
+    dict(
+        base=(180, 167, 255, 255), accent=(210, 200, 255, 255), dark=(60, 50, 100, 255)
+    ),
+    dict(
+        base=(255, 174, 188, 255), accent=(255, 210, 220, 255), dark=(50, 30, 50, 255)
+    ),
+    dict(
+        base=(137, 207, 240, 255), accent=(190, 230, 255, 255), dark=(40, 60, 90, 255)
+    ),
 ]
 
 
@@ -176,7 +184,9 @@ def draw_ears_flush_on_top(drw, cx, cy, rx, ry, oblong, ear_type, color):
             x_ear = cx + sx * ex - back_shift
             y_top = body_top_y_at_x(cx, cy, rx, ry, oblong, x_ear)
             y_bottom = y_top + overlap
-            drw.ellipse([x_ear - w / 2, y_bottom - h, x_ear + w / 2, y_bottom], fill=color)
+            drw.ellipse(
+                [x_ear - w / 2, y_bottom - h, x_ear + w / 2, y_bottom], fill=color
+            )
     else:
         base_w = rx * 0.26
         h = ry * 0.58
@@ -198,17 +208,30 @@ def draw_eye(drw, cx, cy, rx, ry, pal, eye_shape="circle", eye_scale=1.0):
     if eye_shape == "circle":
         drw.ellipse([ex - r, ey - r, ex + r, ey + r], fill=pal["dark"])
     elif eye_shape == "h_oval":
-        drw.ellipse([ex - 1.6 * r, ey - 0.9 * r, ex + 1.6 * r, ey + 0.9 * r], fill=pal["dark"])
+        drw.ellipse(
+            [ex - 1.6 * r, ey - 0.9 * r, ex + 1.6 * r, ey + 0.9 * r], fill=pal["dark"]
+        )
     elif eye_shape == "v_oval":
-        drw.ellipse([ex - 0.9 * r, ey - 1.6 * r, ex + 0.9 * r, ey + 1.6 * r], fill=pal["dark"])
+        drw.ellipse(
+            [ex - 0.9 * r, ey - 1.6 * r, ex + 0.9 * r, ey + 1.6 * r], fill=pal["dark"]
+        )
     elif eye_shape == "diamond":
         drw.polygon(
-            [(ex, ey - 1.1 * r), (ex + 1.1 * r, ey), (ex, ey + 1.1 * r), (ex - 1.1 * r, ey)],
+            [
+                (ex, ey - 1.1 * r),
+                (ex + 1.1 * r, ey),
+                (ex, ey + 1.1 * r),
+                (ex - 1.1 * r, ey),
+            ],
             fill=pal["dark"],
         )
     else:
         drw.polygon(
-            [(ex, ey - 1.2 * r), (ex + 1.1 * r, ey + 0.8 * r), (ex - 1.1 * r, ey + 0.8 * r)],
+            [
+                (ex, ey - 1.2 * r),
+                (ex + 1.1 * r, ey + 0.8 * r),
+                (ex - 1.1 * r, ey + 0.8 * r),
+            ],
             fill=pal["dark"],
         )
     drw.ellipse(
@@ -219,7 +242,15 @@ def draw_eye(drw, cx, cy, rx, ry, pal, eye_shape="circle", eye_scale=1.0):
 
 def draw_mouth(img, cx, cy, rx, ry, open_deg):
     pts = mouth_sector_points(
-        cx, cy, rx, ry, half_deg=open_deg, center_deg=0.0, steps=72, rscale=1.16, ang_pad=6.0
+        cx,
+        cy,
+        rx,
+        ry,
+        half_deg=open_deg,
+        center_deg=0.0,
+        steps=72,
+        rscale=1.16,
+        ang_pad=6.0,
     )
     r, g, b, a = img.split()
     mouth_mask = Image.new("L", img.size, 0)
@@ -332,7 +363,9 @@ def add_edge_shadow(img, offset_x=3, offset_y=-3, opacity=100):
     return result
 
 
-def make_shadow_layer(img, ground_y, opacity=45, squash=0.5, offset_y=3, skew_factor=0.4):
+def make_shadow_layer(
+    img, ground_y, opacity=45, squash=0.5, offset_y=3, skew_factor=0.4
+):
     from PIL import ImageFilter
 
     W, H = img.size
@@ -381,6 +414,8 @@ def make_shadow_layer(img, ground_y, opacity=45, squash=0.5, offset_y=3, skew_fa
         return final
 
     return shadow_layer
+
+
 def render_creature_image(
     wav_path,
     out_dir,
@@ -459,7 +494,9 @@ def render_creature_image(
         )
 
         fill_body_opaque(img_base, cx, cy, rx, ry, pal["base"])
-        draw_ears_flush_on_top(d, cx, cy, rx, ry, oblong, params["ear_type"], pal["base"])
+        draw_ears_flush_on_top(
+            d, cx, cy, rx, ry, oblong, params["ear_type"], pal["base"]
+        )
         draw_body(
             d,
             cx,

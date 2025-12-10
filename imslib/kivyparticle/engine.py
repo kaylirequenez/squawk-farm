@@ -8,17 +8,36 @@ from xml.dom.minidom import parse as parse_xml
 from kivy import metrics
 from kivy.clock import Clock
 from kivy.core.image import Image
-from kivy.graphics import (Callback, Color, PopMatrix, PushMatrix, Quad,
-                           Rotate, Translate)
-from kivy.graphics.opengl import (GL_DST_ALPHA, GL_DST_COLOR, GL_ONE,
-                                  GL_ONE_MINUS_DST_ALPHA,
-                                  GL_ONE_MINUS_DST_COLOR,
-                                  GL_ONE_MINUS_SRC_ALPHA,
-                                  GL_ONE_MINUS_SRC_COLOR, GL_SRC_ALPHA,
-                                  GL_SRC_COLOR, GL_ZERO, glBlendFunc)
+from kivy.graphics import (
+    Callback,
+    Color,
+    PopMatrix,
+    PushMatrix,
+    Quad,
+    Rotate,
+    Translate,
+)
+from kivy.graphics.opengl import (
+    GL_DST_ALPHA,
+    GL_DST_COLOR,
+    GL_ONE,
+    GL_ONE_MINUS_DST_ALPHA,
+    GL_ONE_MINUS_DST_COLOR,
+    GL_ONE_MINUS_SRC_ALPHA,
+    GL_ONE_MINUS_SRC_COLOR,
+    GL_SRC_ALPHA,
+    GL_SRC_COLOR,
+    GL_ZERO,
+    glBlendFunc,
+)
 from kivy.logger import Logger
-from kivy.properties import (BooleanProperty, ListProperty, NumericProperty,
-                             ObjectProperty, StringProperty)
+from kivy.properties import (
+    BooleanProperty,
+    ListProperty,
+    NumericProperty,
+    ObjectProperty,
+    StringProperty,
+)
 from kivy.uix.widget import Widget
 
 from .utils import random_color_variance, random_variance

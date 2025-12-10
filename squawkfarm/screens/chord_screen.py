@@ -25,16 +25,27 @@ class ShadowButton(Button):
 
         with self.canvas.before:
             Color(0.15, 0.1, 0.05, 0.7)
-            self._shadow_rect = Rectangle(
-                pos=(self.x + 5, self.y - 5),
-                size=self.size
-            )
+            self._shadow_rect = Rectangle(pos=(self.x + 5, self.y - 5), size=self.size)
+
 
 from squawkfarm.models.progression import Chord, ChordProgression
 from squawkfarm.utils import get_ui_asset_path
 
 NOTE_NAMES = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
-NOTE_TO_MIDI_OFFSET = {"C": 0, "C#": 1, "D": 2, "Eb": 3, "E": 4, "F": 5, "F#": 6, "G": 7, "Ab": 8, "A": 9, "Bb": 10, "B": 11}
+NOTE_TO_MIDI_OFFSET = {
+    "C": 0,
+    "C#": 1,
+    "D": 2,
+    "Eb": 3,
+    "E": 4,
+    "F": 5,
+    "F#": 6,
+    "G": 7,
+    "Ab": 8,
+    "A": 9,
+    "Bb": 10,
+    "B": 11,
+}
 
 
 class ChordSlot(Widget):
@@ -61,7 +72,10 @@ class ChordSlot(Widget):
             Rectangle(pos=self.pos, size=self.size)
 
             Color(0.4, 0.3, 0.2, 1)
-            Line(rectangle=(self.pos[0], self.pos[1], self.size[0], self.size[1]), width=2)
+            Line(
+                rectangle=(self.pos[0], self.pos[1], self.size[0], self.size[1]),
+                width=2,
+            )
 
     def set_note(self, note):
         self.note = note
@@ -93,8 +107,10 @@ class ChordSlot(Widget):
         return text
 
     def collide_point(self, x, y):
-        return (self.pos[0] <= x <= self.pos[0] + self.size[0] and
-                self.pos[1] <= y <= self.pos[1] + self.size[1])
+        return (
+            self.pos[0] <= x <= self.pos[0] + self.size[0]
+            and self.pos[1] <= y <= self.pos[1] + self.size[1]
+        )
 
 
 class ChordScreen(Screen):
@@ -135,7 +151,9 @@ class ChordScreen(Screen):
         margin = 40
         spacing = 16
         available_width = Window.width - margin
-        btn_size = min(140, (available_width - (len(NOTE_NAMES) - 1) * spacing) / len(NOTE_NAMES))
+        btn_size = min(
+            140, (available_width - (len(NOTE_NAMES) - 1) * spacing) / len(NOTE_NAMES)
+        )
         btn_size = max(btn_size, 30)
         total_width = len(NOTE_NAMES) * btn_size + (len(NOTE_NAMES) - 1) * spacing
         start_x = (Window.width - total_width) / 2
@@ -148,8 +166,8 @@ class ChordScreen(Screen):
                 size_hint=(None, None),
                 size=(btn_size, btn_size),
                 pos=(start_x + i * (btn_size + spacing), y),
-                background_normal='',
-                background_down='',
+                background_normal="",
+                background_down="",
                 background_color=(1, 0.75, 0.85, 1),
                 color=(0.05, 0.05, 0.3, 1),
                 font_size=44,
@@ -164,7 +182,9 @@ class ChordScreen(Screen):
         spacing = 30
         qualities = [("maj", "maj"), ("min", "min"), ("7", "7")]
         available_width = Window.width - margin
-        btn_width = min(160, (available_width - (len(qualities) - 1) * spacing) / len(qualities))
+        btn_width = min(
+            160, (available_width - (len(qualities) - 1) * spacing) / len(qualities)
+        )
         btn_width = max(btn_width, 60)
         btn_height = btn_width * 0.625
         total_width = len(qualities) * btn_width + (len(qualities) - 1) * spacing
@@ -178,8 +198,8 @@ class ChordScreen(Screen):
                 size_hint=(None, None),
                 size=(btn_width, btn_height),
                 pos=(start_x + i * (btn_width + spacing), y),
-                background_normal='',
-                background_down='',
+                background_normal="",
+                background_down="",
                 background_color=(1, 0.75, 0.85, 1),
                 color=(0.05, 0.05, 0.3, 1),
                 font_size=44,
@@ -231,7 +251,9 @@ class ChordScreen(Screen):
         with self.canvas.before:
             Color(1, 1, 1, 1)
             lawn_path = get_ui_asset_path("lawn.png")
-            lawn_tex = Image(source=lawn_path).texture if os.path.exists(lawn_path) else None
+            lawn_tex = (
+                Image(source=lawn_path).texture if os.path.exists(lawn_path) else None
+            )
             if lawn_tex:
                 self.bg_rect = Rectangle(pos=(0, 0), size=Window.size, texture=lawn_tex)
 
@@ -259,7 +281,9 @@ class ChordScreen(Screen):
                 degree = chord.degree
                 note_idx = (degree - 1) % 12
                 slot.note = NOTE_NAMES[note_idx]
-                slot.quality = chord.quality if chord.quality in ("maj", "min") else "maj"
+                slot.quality = (
+                    chord.quality if chord.quality in ("maj", "min") else "maj"
+                )
                 slot.has_7 = "7" in chord.quality
                 slot._draw()
 
@@ -289,13 +313,15 @@ class ChordScreen(Screen):
         self.barn_rect.size = self.barn_btn.size
         self.barn_rect.pos = self.barn_btn.pos
 
-        if hasattr(self, 'bg_rect'):
+        if hasattr(self, "bg_rect"):
             self.bg_rect.size = Window.size
 
         margin = 40
         spacing = 16
         available_width = Window.width - margin
-        btn_size = min(140, (available_width - (len(NOTE_NAMES) - 1) * spacing) / len(NOTE_NAMES))
+        btn_size = min(
+            140, (available_width - (len(NOTE_NAMES) - 1) * spacing) / len(NOTE_NAMES)
+        )
         btn_size = max(btn_size, 30)
         total_width = len(NOTE_NAMES) * btn_size + (len(NOTE_NAMES) - 1) * spacing
         start_x = (Window.width - total_width) / 2
@@ -308,7 +334,9 @@ class ChordScreen(Screen):
         spacing = 30
         qualities = [("maj", "maj"), ("min", "min"), ("7", "7")]
         available_width = Window.width - margin
-        btn_width = min(160, (available_width - (len(qualities) - 1) * spacing) / len(qualities))
+        btn_width = min(
+            160, (available_width - (len(qualities) - 1) * spacing) / len(qualities)
+        )
         btn_width = max(btn_width, 60)
         btn_height = btn_width * 0.625
         total_width = len(qualities) * btn_width + (len(qualities) - 1) * spacing

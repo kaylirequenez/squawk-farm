@@ -6,10 +6,13 @@ from squawkfarm.models.loop_runtime import Loop, Recording
 from squawkfarm.services.audio.grid import Grid
 from squawkfarm.services.audio.audio_manager import AudioManager
 from squawkfarm.services.composition.composer import Composer
-from squawkfarm.services.composition.pitch import generate_constrained_pentatonic_pitch_map
+from squawkfarm.services.composition.pitch import (
+    generate_constrained_pentatonic_pitch_map,
+)
 from squawkfarm.services.composition.rhythm import generate_slots
 from squawkfarm.utils import tune_sample_and_save, get_recording_wav_path
 from squawkfarm.utils.audio_utils import frame_to_time, time_to_frame
+
 
 class LoopEngine:
     def __init__(self, settings, animal_loops=None):
@@ -19,7 +22,9 @@ class LoopEngine:
         self.recording = None
         animal_loops = animal_loops if animal_loops else {}
         if not settings.chord_progression:
-            settings.chord_progression = ChordProgression.generate_random_progression(settings.key_mode, settings.measures)
+            settings.chord_progression = ChordProgression.generate_random_progression(
+                settings.key_mode, settings.measures
+            )
         self.composer = Composer(
             key_mode=settings.key_mode,
             root=settings.root,
@@ -41,7 +46,7 @@ class LoopEngine:
                 loop.volume,
                 loop.instances,
             )
-                    
+
         self.rhythm_candidates: list[list[int]] = []
         self.rhythm_candidate_index: int = 0
 
@@ -54,7 +59,7 @@ class LoopEngine:
         current_time = self.audio_manager.get_scheduler_time()
         self.grid.set_bpm(bpm, current_time)
         return True
-    
+
     def get_time_signature_options(self):
         return self.grid.get_time_signature_options()
 
@@ -66,7 +71,7 @@ class LoopEngine:
             return False
         self.grid.set_time_signature(time_sig)
         return True
-    
+
     def get_total_measures_options(self):
         return self.grid.get_total_measures_options()
 
@@ -97,11 +102,10 @@ class LoopEngine:
         self.composer.set_chord_progression(progression)
         self.settings.chord_progression = progression
         self._retune_all_instances()
-        
+
     def generate_random_chord_progression(self):
         progression = ChordProgression.generate_random_progression(
-            self.composer.key_mode,
-            self.grid.get_total_measures()
+            self.composer.key_mode, self.grid.get_total_measures()
         )
         self.set_chord_progression(progression)
         self._retune_all_instances()
@@ -112,10 +116,10 @@ class LoopEngine:
 
     def set_animal_role(self, animal_id, new_role):
         loop = self.loops[animal_id]
-        
+
         self.composer.change_animal_role(animal_id, loop.role, new_role)
         loop.role = new_role
-        
+
         self._retune_animal_instances(animal_id)
 
     def set_recording(self, animal_id):
@@ -127,7 +131,7 @@ class LoopEngine:
             start_frame = 0
             num_frames = None
         self.recording = Recording(audio_path, start_frame, num_frames)
-        
+
     def set_recording_to_preset(self, audio_path):
         wf = WaveFile(audio_path)
         num_frames = wf.end
@@ -135,7 +139,7 @@ class LoopEngine:
         if num_frames > global_frames:
             num_frames = global_frames
         self.recording = Recording(audio_path, 0, num_frames)
-        
+
         return list(wf.get_frames(0, num_frames))
 
     def get_recording_duration(self):
@@ -176,9 +180,11 @@ class LoopEngine:
             beats = self.slot_to_beat(slots)
             role = self.composer.guess_initial_role(base_midi, beats)
 
-        self.loops[animal_id] = Loop(audio_data, start_frame, num_frames, base_midi, role, volume)
+        self.loops[animal_id] = Loop(
+            audio_data, start_frame, num_frames, base_midi, role, volume
+        )
         self.composer.register_animal_role(animal_id, role)
-        
+
     def delete_animal_loop(self, animal_id):
         loop = self.loops.pop(animal_id)
         self.composer.unregister_animal_role(animal_id, loop.role)
@@ -241,7 +247,7 @@ class LoopEngine:
         loop = self.loops.get(animal_id)
 
         semitones = 12 * direction
-        
+
         lowest = loop.midi + semitones
         highest = max(loop.instances.values()) + semitones
         if lowest < 21 or highest > 108:
@@ -251,13 +257,18 @@ class LoopEngine:
         loop.octave_shift += direction
         for slot in loop.instances:
             loop.instances[slot] += semitones
-            
-        loop.role = self.composer.guess_initial_role(loop.original_midi + 12 * loop.octave_shift, self.slot_to_beat(len(loop.instances))) 
+
+        loop.role = self.composer.guess_initial_role(
+            loop.original_midi + 12 * loop.octave_shift,
+            self.slot_to_beat(len(loop.instances)),
+        )
         self.rhythm_candidates = self._compute_rhythm_candidates_for_animal(animal_id)
         self.rhythm_candidate_index = 0
 
     def slide_instance(self, animal_id, old_start_slot, new_start_slot, overlap=False):
-        return self.loops[animal_id].slide(old_start_slot, new_start_slot, self.grid.frame_to_slot, overlap)
+        return self.loops[animal_id].slide(
+            old_start_slot, new_start_slot, self.grid.frame_to_slot, overlap
+        )
 
     def set_loop_volume(self, animal_id, volume):
         self.loops[animal_id].set_volume(volume)
@@ -267,7 +278,7 @@ class LoopEngine:
 
     def on_update(self):
         self.audio_manager.on_update()
-    
+
     def is_playing(self):
         return self.audio_manager.is_playing()
 
@@ -302,10 +313,10 @@ class LoopEngine:
         if self.recording is not None:
             return self.recording.get_volume()
         return 0.5  # Default volume
-    
+
     def get_loop_volume(self, animal_id):
         return self.loops[animal_id].volume
-    
+
     def set_volume(self, volume):
         self.audio_manager.set_volume(volume)
 
@@ -319,7 +330,6 @@ class LoopEngine:
         gen = loop.get_generator(start_slot, frame_offset=0, loop=False)
         self.audio_manager.mixer.add(gen)
 
-
     def auto_generate_for_animal(self, animal_id):
         """
         Called when an animal is first added or user makes edits.
@@ -327,9 +337,9 @@ class LoopEngine:
         """
         self.rhythm_candidates = self._compute_rhythm_candidates_for_animal(animal_id)
         self.rhythm_candidate_index = 0
-        
+
         self._apply_rhythm_candidate(animal_id)
-        
+
     def toggle_rhythm_option(self, animal_id, direction: int = 1):
         """
         Cycle through precomputed rhythm candidates for this animal.
@@ -340,10 +350,12 @@ class LoopEngine:
         """
         candidates = self.rhythm_candidates
 
-        self.rhythm_candidate_index = (self.rhythm_candidate_index + direction) % len(candidates)
-        
+        self.rhythm_candidate_index = (self.rhythm_candidate_index + direction) % len(
+            candidates
+        )
+
         self._apply_rhythm_candidate(animal_id)
-    
+
     def _apply_rhythm_candidate(self, animal_id):
         """
         Clear this animal's instances and rebuild them
@@ -380,8 +392,10 @@ class LoopEngine:
 
         loop.midi = ui_base_midi
         return pitch_map
-    
-    def _get_same_role_globals(self, role: str, exclude_animal_id=None) -> list[list[int]]:
+
+    def _get_same_role_globals(
+        self, role: str, exclude_animal_id=None
+    ) -> list[list[int]]:
         """
         Get global slot patterns for animals of the same role, excluding one.
         """
@@ -419,7 +433,9 @@ class LoopEngine:
 
         loop_slots = self.grid.frame_to_slot(loop.num_frames)
 
-        same_role_globals = self._get_same_role_globals(role, exclude_animal_id=animal_id)
+        same_role_globals = self._get_same_role_globals(
+            role, exclude_animal_id=animal_id
+        )
         all_role_globals = self._get_all_role_globals(exclude_animal_id=animal_id)
 
         candidates = generate_slots(
@@ -431,7 +447,7 @@ class LoopEngine:
             all_role_globals=all_role_globals,
             min_score=None,  # you can tweak this later
         )
-        
+
         self.rhythm_candidates = candidates
         self.rhythm_candidate_index = 0
 

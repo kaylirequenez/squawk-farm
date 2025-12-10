@@ -12,6 +12,7 @@ class Chord:
     quality: e.g. "maj7", "min7", "dom7", "dim", etc.
     inversion: 0 = root position, 1 = first inversion, etc.
     """
+
     degree: int
     quality: str = "triad"
     inversion: int = 0
@@ -51,18 +52,18 @@ class ChordProgression:
         if key_mode == "minor":
             # i – VI – VII – v
             pattern = [
-                Chord(degree=1, quality="min"),   # i
-                Chord(degree=6, quality="maj"),   # VI
-                Chord(degree=7, quality="maj"),   # VII
-                Chord(degree=5, quality="min"),   # v
+                Chord(degree=1, quality="min"),  # i
+                Chord(degree=6, quality="maj"),  # VI
+                Chord(degree=7, quality="maj"),  # VII
+                Chord(degree=5, quality="min"),  # v
             ]
         else:
             # major: I – V – vi – IV
             pattern = [
-                Chord(degree=1, quality="maj"),   # I
-                Chord(degree=5, quality="maj"),   # V
-                Chord(degree=6, quality="min"),   # vi
-                Chord(degree=4, quality="maj"),   # IV
+                Chord(degree=1, quality="maj"),  # I
+                Chord(degree=5, quality="maj"),  # V
+                Chord(degree=6, quality="min"),  # vi
+                Chord(degree=4, quality="maj"),  # IV
             ]
 
         if num_measures <= len(pattern):
