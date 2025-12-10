@@ -479,11 +479,13 @@ class LoopPlacementScreen(Screen):
             self._octave_shift_event = None
 
     def _do_octave_shift(self):
-        """Perform a single octave shift"""
+        """Perform a single octave shift and replay the sequence"""
         self._destroy_nowbar()
         self._stop_preview()
         self.loop_engine.shift_animal_octave(self.animal_id, self._octave_shift_direction)
         self._rebuild_piano_from_engine()
+        # Replay the sequence in the new octave
+        self._start_preview(start_time=0.0)
 
     def _on_add_press(self, *_):
         if self._adding_note:
@@ -624,8 +626,7 @@ class LoopPlacementScreen(Screen):
         self._drag_note = None
 
         old_start_slot = self._drag_note_start_slot
-
-        # Check if a
+        # Check if any overlap occurs
         trash_x, trash_y = self.trash_btn.pos
         trash_w, trash_h = self.trash_btn.size
         note_x, note_y = note.pos
