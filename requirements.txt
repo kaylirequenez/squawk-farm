@@ -1,0 +1,4 @@
+kivy
+librosa
+numpy
+pyfluidsynth
